@@ -1,0 +1,25 @@
+{:bb4t/manifest-version 1
+
+ :runtime
+ {:id :bb4t
+  :profile :upstream-baseline}
+
+ :upstream
+ {:repository "https://github.com/babashka/babashka"
+  :tag "v1.13.219"
+  :commit :bb4t.todo/record-during-bb0}
+
+ :build
+ {:platform :bb4t.todo/record-during-bb0
+  :jdk :bb4t.todo/record-during-bb0
+  :graalvm :bb4t.todo/record-during-bb0
+  :native-image :bb4t.todo/record-during-bb0}
+
+ :features
+ {:mode :upstream-baseline}
+
+ :libraries {}
+
+ :capabilities {}
+
+ :surfaces #{}}
