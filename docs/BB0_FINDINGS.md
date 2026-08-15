@@ -25,10 +25,10 @@ The canonical tag was checked with:
 git ls-remote https://github.com/babashka/babashka.git refs/tags/v1.13.219
 ```
 
-The bootstrap branch is at a later upstream commit (`397017529b832f0584c655bbbe34058452ca9426`,
-`1.13.220-SNAPSHOT`). It was not used as the measured baseline. The BB0 script
-clones the selected tag into a fresh detached source directory and verifies its
-commit before building.
+The working bb4t lineage is rooted directly at the selected release commit. The
+bootstrap scaffold is applied to that source, and BB0 adds only build tooling and
+evidence. The BB0 script also clones the selected tag into a fresh detached source
+directory and verifies its commit before building.
 
 The bootstrap input archive `bb4t-bootstrap-starter.zip` has SHA-256
 `7515684cdeae680dbcd62c063a3d1821fba05e84606221865a048c1359b001dd`.
@@ -190,6 +190,58 @@ The local build used the release's documented dynamic Linux path. The tag's
 workflow had Linux native matrix entries commented out, so this result does not
 claim parity with an upstream Linux CI artifact or with Babashka's static/musl
 release packaging.
+
+## Lineage Repair
+
+The original branch topology accidentally placed bootstrap commit
+`f6f589b5f6ea03e3099fdc4bbdfc444763c3a966` and BB0 head
+`9dfa19a4eda78aafd3fb5d4da0b09deec1affba0` after later upstream commit
+`397017529b832f0584c655bbbe34058452ca9426` (`1.13.220-SNAPSHOT`). That
+introduced unrelated upstream changes into the bb4t lineage even though the BB0
+measurement itself correctly used `v1.13.219`.
+
+The existing commits were replayed onto the measured source coordinate:
+
+```text
+v1.13.219 / 140ef9dcd770a54457a02fa29c3a2f643f4968d4
+  -> bootstrap 3eb3bf5990bb98c2d55c4f9d3c22d5b4d7603c03
+  -> BB0 evidence e9ea529132ae511e8b8995e80272faa279c0d332
+  -> BB0 review 58aea0834ad9dfabf41eff516a62829dc3146c22
+```
+
+The last SHA above is the repaired BB0 evidence head before this
+documentation-only lineage record. The live `bb4t/bb0` tip is obtained with
+`git rev-parse bb4t/bb0`; a commit cannot contain its own final SHA. Both the
+bootstrap and BB0 trees retain SCI submodule
+`64163c4560e085ffdcf47951b406f62f753b7f4c`.
+
+Verification included:
+
+```bash
+git merge-base 140ef9dcd770a54457a02fa29c3a2f643f4968d4 bb4t/bootstrap
+git merge-base bb4t/bootstrap bb4t/bb0
+git log --graph --oneline --decorate 140ef9dc^..bb4t/bb0
+git diff --stat 140ef9dcd770a54457a02fa29c3a2f643f4968d4...bb4t/bootstrap
+git diff --stat bb4t/bootstrap...bb4t/bb0
+git diff --submodule 140ef9dcd770a54457a02fa29c3a2f643f4968d4...bb4t/bootstrap
+git diff --submodule bb4t/bootstrap...bb4t/bb0
+docker build --no-cache --file Dockerfile.bb0 --target ci \
+  --tag bb4t-bb0-ci-lineage .
+```
+
+The merge bases resolved to the expected release and bootstrap commits. The first
+diff contained only the 15 bootstrap-scaffold files; the second contained only
+the 9 BB0 build/evidence files; both submodule diffs were empty. The uncached
+Docker build cloned commit `140ef9d...`, tree `ac30a258...`, and SCI
+`64163c45...`; all seven native test phases and the version, describe, and
+evaluation smoke checks passed.
+
+The rebuilt container binary was 87165184 bytes with SHA-256
+`ccc208548d17fab97b5ccfc8ab8127b8c84a727029cdbc94b4ddb3b5a4680237`,
+which differs from the historical host measurement. It reports the same version,
+Git SHA, features, and dynamic library surface. The historical measurement remains
+unchanged because BB0 does not claim bit-for-bit reproducibility. The lineage
+repair therefore does not change the original BB0 conclusions.
 
 ## Reproducibility Gaps
 
