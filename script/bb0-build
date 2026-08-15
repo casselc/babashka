@@ -6,6 +6,7 @@ UPSTREAM_REPOSITORY="https://github.com/babashka/babashka.git"
 UPSTREAM_TAG="v1.13.219"
 UPSTREAM_COMMIT="140ef9dcd770a54457a02fa29c3a2f643f4968d4"
 GRAALVM_VERSION="25.0.4"
+GRAALVM_RELEASE="25.0.4+7.1"
 LEIN_VERSION="2.9.8"
 
 : "${GRAALVM_HOME:?Set GRAALVM_HOME to an Oracle GraalVM 25 installation}"
@@ -23,8 +24,10 @@ LEIN_BIN=$(command -v lein) || {
 
 NATIVE_IMAGE_VERSION_OUTPUT=$("$GRAALVM_HOME/bin/native-image" --version)
 read -r NATIVE_IMAGE_COMMAND NATIVE_IMAGE_ACTUAL_VERSION _ <<<"$NATIVE_IMAGE_VERSION_OUTPUT"
-if [[ "$NATIVE_IMAGE_COMMAND" != "native-image" || "$NATIVE_IMAGE_ACTUAL_VERSION" != "$GRAALVM_VERSION" ]]; then
-    echo "BB0 requires Oracle GraalVM native-image $GRAALVM_VERSION" >&2
+if [[ "$NATIVE_IMAGE_COMMAND" != "native-image" || "$NATIVE_IMAGE_ACTUAL_VERSION" != "$GRAALVM_VERSION" ]] \
+    || [[ "$NATIVE_IMAGE_VERSION_OUTPUT" != *"GraalVM Runtime Environment Oracle GraalVM $GRAALVM_RELEASE"* ]] \
+    || [[ "$NATIVE_IMAGE_VERSION_OUTPUT" != *"Substrate VM Oracle GraalVM $GRAALVM_RELEASE"* ]]; then
+    echo "BB0 requires Oracle GraalVM $GRAALVM_RELEASE native-image $GRAALVM_VERSION" >&2
     exit 1
 fi
 
