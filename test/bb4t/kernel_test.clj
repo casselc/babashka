@@ -160,7 +160,11 @@
     (is (thrown? clojure.lang.ExceptionInfo
                  (runtime/create {:bb4t/commit "forged"})))
     (is (thrown? clojure.lang.ExceptionInfo
-                 (runtime/create {:resources {:attacker/root project-root}})))))
+                 (runtime/create {:resources {:attacker/root project-root}})))
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (runtime/describe (Object.))))
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (context/describe (Object.))))))
 
 (deftest operation-dispatch-rechecks-grants-test
   (let [runtime (test-runtime)

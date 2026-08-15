@@ -294,6 +294,10 @@
         :handle/context-opaque?
         (and (not (associative? minimal))
              (= :opaque (:value/kind (value/describe minimal))))
+        :handle/forged-runtime-denied?
+        (validation-failure? #(runtime/describe (Object.)))
+        :handle/forged-context-denied?
+        (validation-failure? #(context/describe (Object.)))
         :runtime/authority-policy-recorded?
         (let [base (get-in (runtime/describe runtime)
                            [:runtime/manifest :sci/base])]
