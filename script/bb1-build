@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+BB1_REPOSITORY="https://github.com/casselc/babashka.git"
+BB1_BRANCH="bb4t/bb1"
+BB0_COMMIT="eb88396c2e34c2e1fbb3e60562267527ad515191"
+UPSTREAM_COMMIT="140ef9dcd770a54457a02fa29c3a2f643f4968d4"
+SCI_COMMIT="64163c4560e085ffdcf47951b406f62f753b7f4c"
+GRAALVM_VERSION="25.0.4"
+GRAALVM_RELEASE="25.0.4+7.1"
+LEIN_VERSION="2.9.8"
+
+: "${BB1_COMMIT:?Set BB1_COMMIT to the exact published bb4t/bb1 commit}"
+: "${GRAALVM_HOME:?Set GRAALVM_HOME to an Oracle GraalVM 25 installation}"
+: "${LEIN_HOME:?Set LEIN_HOME to a prepared Leiningen home}"
+
+if [[ ! -x "$GRAALVM_HOME/bin/native-image" ]]; then
+    echo "native-image was not found under GRAALVM_HOME" >&2
+    exit 1
+fi
+
+LEIN_BIN=$(command -v lein) || {
+    echo "lein was not found on PATH" >&2
+    exit 1
+}
+
+NATIVE_IMAGE_VERSION_OUTPUT=$("$GRAALVM_HOME/bin/native-image" --version)
+read -r NATIVE_IMAGE_COMMAND NATIVE_IMAGE_ACTUAL_VERSION _ <<<"$NATIVE_IMAGE_VERSION_OUTPUT"
+if [[ "$NATIVE_IMAGE_COMMAND" != "native-image" || "$NATIVE_IMAGE_ACTUAL_VERSION" != "$GRAALVM_VERSION" ]] \
+    || [[ "$NATIVE_IMAGE_VERSION_OUTPUT" != *"GraalVM Runtime Environment Oracle GraalVM $GRAALVM_RELEASE"* ]] \
+    || [[ "$NATIVE_IMAGE_VERSION_OUTPUT" != *"Substrate VM Oracle GraalVM $GRAALVM_RELEASE"* ]]; then
+    echo "BB1 requires Oracle GraalVM $GRAALVM_RELEASE native-image $GRAALVM_VERSION" >&2
+    exit 1
+fi
+
+LEIN_VERSION_OUTPUT=$("$LEIN_BIN" --version)
+read -r LEIN_COMMAND LEIN_ACTUAL_VERSION _ <<<"$LEIN_VERSION_OUTPUT"
+if [[ "$LEIN_COMMAND" != "Leiningen" || "$LEIN_ACTUAL_VERSION" != "$LEIN_VERSION" ]]; then
+    echo "BB1 requires Leiningen $LEIN_VERSION" >&2
+    exit 1
+fi
+
+ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+WORK_ROOT=${BB1_WORK_ROOT:-"${TMPDIR:-/tmp}/bb4t-bb1"}
+ARTIFACT_DIR="$ROOT_DIR/artifacts/bb1"
+
+mkdir -p "$WORK_ROOT" "$ARTIFACT_DIR"
+SOURCE_DIR=$(mktemp -d "$WORK_ROOT/source.XXXXXX")
+
+git clone --branch "$BB1_BRANCH" --depth 10 --recursive \
+    "$BB1_REPOSITORY" "$SOURCE_DIR"
+
+ACTUAL_COMMIT=$(git -C "$SOURCE_DIR" rev-parse HEAD)
+if [[ "$ACTUAL_COMMIT" != "$BB1_COMMIT" ]]; then
+    echo "Expected BB1 $BB1_COMMIT, resolved $ACTUAL_COMMIT" >&2
+    exit 1
+fi
+
+git -C "$SOURCE_DIR" merge-base --is-ancestor "$UPSTREAM_COMMIT" HEAD
+git -C "$SOURCE_DIR" merge-base --is-ancestor "$BB0_COMMIT" HEAD
+
+ACTUAL_SCI_COMMIT=$(git -C "$SOURCE_DIR" ls-tree HEAD sci | cut -d' ' -f3 | cut -f1)
+if [[ "$ACTUAL_SCI_COMMIT" != "$SCI_COMMIT" ]]; then
+    echo "Expected SCI $SCI_COMMIT, resolved $ACTUAL_SCI_COMMIT" >&2
+    exit 1
+fi
+
+LEIN_BIN_DIR=$(dirname "$LEIN_BIN")
+BUILD_PATH="$GRAALVM_HOME/bin:$LEIN_BIN_DIR"
+if [[ "$LEIN_BIN_DIR" != "/usr/local/bin" ]]; then
+    BUILD_PATH="$BUILD_PATH:/usr/local/bin"
+fi
+BUILD_PATH="$BUILD_PATH:/usr/bin:/bin"
+BUILD_HOME="$SOURCE_DIR/.bb1-home"
+BUILD_TMPDIR=${TMPDIR:-"$BUILD_HOME/tmp"}
+mkdir -p "$BUILD_HOME" "$BUILD_TMPDIR"
+
+/usr/bin/time -v -o "$ARTIFACT_DIR/build-time.txt" \
+    env -i \
+    HOME="$BUILD_HOME" \
+    LANG=C.UTF-8 \
+    PATH="$BUILD_PATH" \
+    TMPDIR="$BUILD_TMPDIR" \
+    JAVA_HOME="$GRAALVM_HOME" \
+    GRAALVM_HOME="$GRAALVM_HOME" \
+    LEIN_HOME="$LEIN_HOME" \
+    LEIN_JVM_OPTS="-Duser.home=$BUILD_HOME" \
+    BABASHKA_SHA="$BB1_COMMIT" \
+    BABASHKA_XMX="${BABASHKA_XMX:--J-Xmx6500m}" \
+    /bin/bash -c 'cd "$1" && script/uberjar && script/compile' _ "$SOURCE_DIR" \
+    >"$ARTIFACT_DIR/build.log" 2>&1
+
+cp "$SOURCE_DIR/bb" "$ARTIFACT_DIR/bb"
+printf '%s\n' "$SOURCE_DIR" >"$ARTIFACT_DIR/source-path.txt"
+printf '%s\n' "$ACTUAL_COMMIT" >"$ARTIFACT_DIR/commit.txt"
+git -C "$SOURCE_DIR" rev-parse HEAD^{tree} >"$ARTIFACT_DIR/tree.txt"
+printf '%s\n' "$ACTUAL_SCI_COMMIT" >"$ARTIFACT_DIR/sci-commit.txt"
+stat --format='%s' "$ARTIFACT_DIR/bb" >"$ARTIFACT_DIR/binary-bytes.txt"
+(cd "$ARTIFACT_DIR" && sha256sum bb >binary-sha256.txt)
+
+"$ARTIFACT_DIR/bb" version
+sha256sum "$ARTIFACT_DIR/bb"

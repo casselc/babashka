@@ -13,6 +13,8 @@ pom.xml.asc
 /bb
 /.bb0-ci-artifacts/
 /artifacts/bb0/
+/artifacts/bb1/
+/.bb1-ci-artifacts/
 .clj-kondo/.cache
 !java/src/babashka/impl/LockFix.class
 !test-resources/babashka/src_for_classpath_test/foo.jar

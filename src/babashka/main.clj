@@ -65,6 +65,7 @@
    [babashka.impl.uberscript :as uberscript]
    [babashka.nrepl.server :as nrepl-server]
    [babashka.wait :refer [wait-namespace]]
+   [bb4t.internal-cli :as bb4t-internal]
    [clojure.edn :as edn]
    [clojure.java.io :as io]
    [clojure.string :as str]
@@ -1392,6 +1393,11 @@ Use bb run --help to show this help output.
         (when-not (str/blank? env-home)
           (System/setProperty "user.home" env-home))))))
 
+(defn- invoke-main [args]
+  (if (= "--bb4t-internal" (first args))
+    (bb4t-internal/run build-commit-sha (rest args))
+    (apply main args)))
+
 (defn -main
   [& args]
   (fix-user-home!)
@@ -1403,11 +1409,11 @@ Use bb run --help to show this help output.
           last-iteration (dec n)]
       (dotimes [i n]
         (if (< i last-iteration)
-          (with-out-str (apply main args))
-          (do (apply main args)
+          (with-out-str (invoke-main args))
+          (do (invoke-main args)
               (binding [*out* *err*]
                 (println "ran" n "times"))))))
-    (let [{:keys [exit force-exit]} (apply main args)]
+    (let [{:keys [exit force-exit]} (invoke-main args)]
       ;; On musl, the process doesn't exit after script execution without this.
       ;; On non-musl it's redundant but harmless.
       ;; See https://github.com/oracle/graal/issues/12116

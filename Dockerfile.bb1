@@ -1,0 +1,148 @@
+FROM ubuntu:26.04@sha256:678c6550cc43645e08669028bc177f50be4e7c5b8cca677067b1914d4afc7a03 AS ci
+
+ARG TARGETOS
+ARG TARGETARCH
+ARG BB1_COMMIT
+ARG GRAALVM_VERSION=25.0.4
+ARG GRAALVM_FEATURE_VERSION=25
+ARG GRAALVM_ARCHIVE_SHA256=76007c309f821aaf435bce63162ea0395587fc77350801c81643fe7feea37276
+ARG LEIN_VERSION=2.9.8
+ARG LEIN_SCRIPT_SHA256=54912fd6d11976a0163f85a45424dd504d1d0c263c56875d7f37e55bc8feff5c
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV GRAALVM_HOME=/opt/graalvm-$GRAALVM_VERSION
+ENV JAVA_HOME=$GRAALVM_HOME
+ENV LEIN_HOME=/opt/lein
+ENV LEIN_ROOT=1
+ENV PATH=$GRAALVM_HOME/bin:/usr/local/bin:/usr/bin:/bin
+
+RUN if { [ -n "$TARGETOS" ] && [ "$TARGETOS" != "linux" ]; } \
+      || { [ -n "$TARGETARCH" ] && [ "$TARGETARCH" != "amd64" ]; }; then \
+      echo "Dockerfile.bb1 is linux/amd64-only; got TARGETOS=$TARGETOS TARGETARCH=$TARGETARCH" >&2; \
+      exit 1; \
+    fi \
+    && test -n "$BB1_COMMIT"
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y \
+       build-essential \
+       ca-certificates \
+       curl \
+       git \
+       time \
+       zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /opt/downloads "$GRAALVM_HOME" "$LEIN_HOME" /workspace/.tmp \
+    && curl --fail --location \
+       --output "/opt/downloads/graalvm-jdk-${GRAALVM_VERSION}_linux-x64_bin.tar.gz" \
+       "https://download.oracle.com/graalvm/${GRAALVM_FEATURE_VERSION}/archive/graalvm-jdk-${GRAALVM_VERSION}_linux-x64_bin.tar.gz" \
+    && printf '%s  %s\n' \
+       "$GRAALVM_ARCHIVE_SHA256" \
+       "/opt/downloads/graalvm-jdk-${GRAALVM_VERSION}_linux-x64_bin.tar.gz" \
+       | sha256sum --check --strict \
+    && tar -xzf "/opt/downloads/graalvm-jdk-${GRAALVM_VERSION}_linux-x64_bin.tar.gz" \
+       -C "$GRAALVM_HOME" --strip-components 1 \
+    && rm "/opt/downloads/graalvm-jdk-${GRAALVM_VERSION}_linux-x64_bin.tar.gz"
+
+ENV TMPDIR=/workspace/.tmp
+
+RUN curl --fail --location \
+    --output /usr/local/bin/lein \
+    "https://raw.githubusercontent.com/technomancy/leiningen/${LEIN_VERSION}/bin/lein" \
+    && printf '%s  %s\n' "$LEIN_SCRIPT_SHA256" /usr/local/bin/lein \
+       | sha256sum --check --strict \
+    && chmod +x /usr/local/bin/lein \
+    && lein self-install \
+    && lein --version \
+    && native-image --version
+
+WORKDIR /workspace
+
+COPY script/bb1-build script/bb1-build
+
+RUN BB1_COMMIT="$BB1_COMMIT" BB1_WORK_ROOT=/workspace/.bb1-work script/bb1-build
+
+RUN read -r SOURCE_DIR < artifacts/bb1/source-path.txt \
+    && VERSION=$(tr -d '\n' < "$SOURCE_DIR/resources/BABASHKA_VERSION") \
+    && cd "$SOURCE_DIR" \
+    && env -i \
+       HOME="$SOURCE_DIR/.bb1-home" \
+       LANG=C.UTF-8 \
+       PATH="$PATH" \
+       TMPDIR="$TMPDIR" \
+       JAVA_HOME="$GRAALVM_HOME" \
+       GRAALVM_HOME="$GRAALVM_HOME" \
+       LEIN_HOME="$LEIN_HOME" \
+       java -jar "$SOURCE_DIR/target/babashka-${VERSION}-standalone.jar" \
+       --bb4t-internal bb1-corpus \
+       > /workspace/artifacts/bb1/corpus-jvm.edn
+
+RUN read -r SOURCE_DIR < artifacts/bb1/source-path.txt \
+    && cd "$SOURCE_DIR" \
+    && env -i \
+       HOME="$SOURCE_DIR/.bb1-home" \
+       LANG=C.UTF-8 \
+       PATH=/usr/bin:/bin \
+       TMPDIR="$TMPDIR" \
+       "$SOURCE_DIR/bb" --bb4t-internal bb1-corpus \
+       > /workspace/artifacts/bb1/corpus-native.edn \
+    && env -i \
+       HOME="$SOURCE_DIR/.bb1-home" \
+       LANG=C.UTF-8 \
+       PATH=/usr/bin:/bin \
+       TMPDIR="$TMPDIR" \
+       "$SOURCE_DIR/bb" --bb4t-internal bb1-measure \
+       > /workspace/artifacts/bb1/context-latency-native.edn
+
+RUN read -r SOURCE_DIR < artifacts/bb1/source-path.txt \
+    && "$SOURCE_DIR/bb" -e \
+       '(require (quote [clojure.edn :as edn]))
+        (let [[jvm-path native-path] *command-line-args*
+              jvm (edn/read-string (slurp jvm-path))
+              native (edn/read-string (slurp native-path))]
+          (assert (:pass? jvm))
+          (assert (:pass? native))
+          (assert (= (:parity jvm) (:parity native)))
+          (println :bb1-parity-ok))' \
+       artifacts/bb1/corpus-jvm.edn artifacts/bb1/corpus-native.edn
+
+RUN read -r SOURCE_DIR < artifacts/bb1/source-path.txt \
+    && /usr/bin/time -v -o /workspace/artifacts/bb1/jvm-test-time.txt \
+       env -i \
+       HOME="$SOURCE_DIR/.bb1-home" \
+       LANG=C.UTF-8 \
+       PATH="$PATH" \
+       TMPDIR="$TMPDIR" \
+       JAVA_HOME="$GRAALVM_HOME" \
+       GRAALVM_HOME="$GRAALVM_HOME" \
+       LEIN_HOME="$LEIN_HOME" \
+       LEIN_JVM_OPTS="-Duser.home=$SOURCE_DIR/.bb1-home" \
+       BABASHKA_TEST_ENV=jvm \
+       /bin/bash -c 'cd "$1" && script/test' _ "$SOURCE_DIR" \
+       > /workspace/artifacts/bb1/jvm-test.log 2>&1 \
+    || { tail -n 200 /workspace/artifacts/bb1/jvm-test.log; exit 1; }
+
+RUN read -r SOURCE_DIR < artifacts/bb1/source-path.txt \
+    && /usr/bin/time -v -o /workspace/artifacts/bb1/native-test-time.txt \
+       env -i \
+       HOME="$SOURCE_DIR/.bb1-home" \
+       LANG=C.UTF-8 \
+       PATH="$PATH" \
+       TMPDIR="$TMPDIR" \
+       JAVA_HOME="$GRAALVM_HOME" \
+       GRAALVM_HOME="$GRAALVM_HOME" \
+       LEIN_HOME="$LEIN_HOME" \
+       LEIN_JVM_OPTS="-Duser.home=$SOURCE_DIR/.bb1-home" \
+       BABASHKA_TEST_ENV=native \
+       /bin/bash -c 'cd "$1" && script/test' _ "$SOURCE_DIR" \
+       > /workspace/artifacts/bb1/native-test.log 2>&1 \
+    || { tail -n 200 /workspace/artifacts/bb1/native-test.log; exit 1; }
+
+FROM ci AS artifact-files
+
+RUN rm /workspace/artifacts/bb1/source-path.txt
+
+FROM scratch AS artifacts
+
+COPY --from=artifact-files /workspace/artifacts/bb1/ /

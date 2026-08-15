@@ -18,4 +18,6 @@ README.md
 .cpcache/
 target/
 artifacts/bb0/
+artifacts/bb1/
 .bb0-ci-artifacts/
+.bb1-ci-artifacts/
