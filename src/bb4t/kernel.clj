@@ -10,9 +10,12 @@
            [java.nio.channels SeekableByteChannel]
            [java.nio.file DirectoryStream Files LinkOption OpenOption Path Paths
             SecureDirectoryStream StandardOpenOption]
-           [java.nio.file.attribute BasicFileAttributeView FileAttribute]
+           [java.nio.file.attribute BasicFileAttributes BasicFileAttributeView
+            FileAttribute]
            [java.time Instant]
            [java.util UUID]))
+
+(set! *warn-on-reflection* true)
 
 (def ^:private upstream-commit
   "140ef9dcd770a54457a02fa29c3a2f643f4968d4")
@@ -143,10 +146,14 @@
 (defn- utf8-bytes [^String value]
   (.getBytes value StandardCharsets/UTF_8))
 
+(defn- utf8-byte-count [^String value]
+  (let [^bytes bytes (utf8-bytes value)]
+    (alength bytes)))
+
 (defn- json-read [[input :as args]]
   (when-not (and (= 1 (count args)) (string? input))
     (fail! "data.json/read expects one string" {:operation/id :data.json/read}))
-  (when (> (alength (utf8-bytes input)) max-json-bytes)
+  (when (> (utf8-byte-count input) max-json-bytes)
     (fail! "JSON input exceeds byte limit" {:limit max-json-bytes}))
   (let [value (json/parse-string-strict input)
         value-count
@@ -162,13 +169,13 @@
     (fail! "data.json/write expects one value" {:operation/id :data.json/write}))
   (bounded-json-data! value)
   (let [output (json/generate-string value)]
-    (when (> (alength (utf8-bytes output)) max-json-bytes)
+    (when (> (utf8-byte-count output) max-json-bytes)
       (fail! "JSON output exceeds byte limit" {:limit max-json-bytes}))
     output))
 
 (defn- read-bounded-channel [^SeekableByteChannel channel max-bytes]
   (with-open [output (ByteArrayOutputStream.)]
-    (let [buffer (byte-array 8192)]
+    (let [^bytes buffer (byte-array 8192)]
       (loop [total 0]
         (let [remaining (- (inc max-bytes) total)
               byte-buffer (ByteBuffer/wrap buffer 0
@@ -208,19 +215,21 @@
         (loop [^SecureDirectoryStream directory root-directory
                [component & more] components]
           (if (seq more)
-            (let [child (.newDirectoryStream
-                         directory component
-                         (into-array LinkOption [LinkOption/NOFOLLOW_LINKS]))]
+            (let [^SecureDirectoryStream child
+                  (.newDirectoryStream
+                   directory component
+                   (into-array LinkOption [LinkOption/NOFOLLOW_LINKS]))]
               (swap! opened conj child)
               (recur child more))
-            (let [attributes-view
+            (let [^BasicFileAttributeView attributes-view
                   (.getFileAttributeView
                    directory component BasicFileAttributeView
                    (into-array LinkOption [LinkOption/NOFOLLOW_LINKS]))
-                  attributes (.readAttributes attributes-view)]
+                  ^BasicFileAttributes attributes
+                  (.readAttributes attributes-view)]
               (when-not (.isRegularFile attributes)
                 (fail! "project/read target is not a regular file" {}))
-              (with-open [channel
+              (with-open [^SeekableByteChannel channel
                           (.newByteChannel
                            directory component
                            #{StandardOpenOption/READ LinkOption/NOFOLLOW_LINKS}

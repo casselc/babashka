@@ -74,6 +74,7 @@ RUN read -r SOURCE_DIR < artifacts/bb1/source-path.txt \
        JAVA_HOME="$GRAALVM_HOME" \
        GRAALVM_HOME="$GRAALVM_HOME" \
        LEIN_HOME="$LEIN_HOME" \
+       BABASHKA_SHA="$BB1_COMMIT" \
        java -jar "$SOURCE_DIR/target/babashka-${VERSION}-standalone.jar" \
        --bb4t-internal bb1-corpus \
        > /workspace/artifacts/bb1/corpus-jvm.edn
