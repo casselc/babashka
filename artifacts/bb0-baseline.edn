@@ -44,7 +44,7 @@
   :dynamic-libraries ["libz.so.1" "libc.so.6"]}
 
  :startup
- {:command ["/home/chuck/opencode/src/bb4t/artifacts/bb0/bb" "-e" "nil"]
+ {:command ["artifacts/bb0/bb" "-e" "nil"]
   :environment {:home "/tmp/opencode/bb0-startup-home"
                 :path "/usr/bin:/bin"
                 :page-cache :warm}
