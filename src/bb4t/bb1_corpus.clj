@@ -11,6 +11,12 @@
 (def profiles
   [:agent/minimal :transform/pure :agent/project-read])
 
+(defn- value-data [result]
+  (get-in result [:value :value/data]))
+
+(defn- invoked-data [description]
+  (:value/data description))
+
 (def authority-cases
   [{:case/id :core/arithmetic
     :source "(+ 1 2)"
@@ -111,7 +117,7 @@
 (defn- run-case [context profile {:keys [case/id source setup expected]}]
   (try
     (when setup (context/evaluate context setup))
-    (let [{:keys [value]} (context/evaluate context source)
+    (let [value (value-data (context/evaluate context source))
           actual :allow]
       {:case/id id
        :profile profile
@@ -143,8 +149,8 @@
                            :else :unexpected/error)}))))
 
 (defn- discovery-results [project-context]
-  (let [apropos (:value (context/evaluate project-context
-                                          "(apropos \"project\")"))
+  (let [apropos (value-data (context/evaluate project-context
+                                               "(apropos \"project\")"))
         doc-result (context/evaluate project-context "(doc project/read)")]
     {:apropos/project-read? (boolean (some #{'project/read} apropos))
      :doc/meaningful? (and (str/includes? (:out doc-result) "project/read")
@@ -188,7 +194,7 @@
   (when path
     (Files/deleteIfExists path)))
 
-(defn- project-assurance [bb4t-commit]
+(defn- project-assurance []
   (let [root (Files/createTempDirectory
               "bb4t-bb1-corpus-root" (make-array FileAttribute 0))
         outside-root (Files/createTempDirectory
@@ -205,13 +211,13 @@
                    (make-array OpenOption 0))
       (Files/writeString outside "secret" (make-array OpenOption 0))
       (Files/createSymbolicLink link outside (make-array FileAttribute 0))
-      (let [runtime (runtime/create {:bb4t/commit bb4t-commit
-                                     :resources {:project/root root}})
+      (let [runtime (runtime/create {:resources {:project/root root}})
             context (context/create runtime
                                     {:profile :agent/project-read
                                      :limits {:project/read-max-bytes 4}})
-            normal-read? (= "1234" (operation/invoke context :project/read
-                                                       ["file.txt"]))
+            normal-read? (= "1234" (invoked-data
+                                    (operation/invoke context :project/read
+                                                      ["file.txt"])))
             lexical-escape? (validation-failure?
                              #(operation/invoke context :project/read
                                                 ["../outside.txt"]))
@@ -244,12 +250,12 @@
         (delete-if-present! root)
         (delete-if-present! outside-root)))))
 
-(defn- assurance-results [bb4t-commit project-root runtime contexts]
+(defn- assurance-results [project-root runtime contexts]
   (let [minimal (get contexts :agent/minimal)
         pure (get contexts :transform/pure)
-        event-runtime (runtime/create {:bb4t/commit bb4t-commit
-                                       :event-limit 3})
-        event-context (context/create event-runtime {:profile :transform/pure})]
+        event-runtime (runtime/create {:event-limit 3})
+        event-context (context/create event-runtime {:profile :transform/pure})
+        oversized-string (apply str (repeat 1048577 "x"))]
     (context/evaluate event-context "(+ 1 2)")
     (context/evaluate event-context "(data.json/read \"{}\")")
     (let [{:keys [events events/dropped]} (events/snapshot event-runtime)]
@@ -268,12 +274,14 @@
                            :authorized-capabilities #{:project/read}}))
         :spec/missing-resource-fails?
         (validation-failure?
-         #(context/create (runtime/create {:bb4t/commit bb4t-commit})
+         #(context/create (runtime/create {})
                           {:profile :agent/project-read}))
         :runtime/unknown-resource-fails?
         (validation-failure?
-         #(runtime/create {:bb4t/commit bb4t-commit
-                           :resources {:attacker/root project-root}}))
+         #(runtime/create {:resources {:attacker/root project-root}}))
+        :runtime/provenance-override-fails?
+        (validation-failure?
+         #(runtime/create {:bb4t/commit "forged"}))
         :runtime/manifest-inert?
         (try
           (canonical/coordinate :bb4t/test-vector (runtime/describe runtime))
@@ -294,6 +302,35 @@
         :json/lazy-value-denied?
         (validation-failure?
          #(operation/invoke pure :data.json/write [(map identity [1 2])]))
+        :json/input-byte-cap-enforced?
+        (validation-failure?
+         #(operation/invoke pure :data.json/read
+                            [(str "\"" oversized-string "\"")]))
+        :json/output-byte-cap-enforced?
+        (validation-failure?
+         #(operation/invoke pure :data.json/write [oversized-string]))
+        :json/depth-cap-enforced?
+        (validation-failure?
+         #(operation/invoke pure :data.json/write
+                            [(nth (iterate vector nil) 65)]))
+        :json/node-cap-enforced?
+        (validation-failure?
+         #(operation/invoke pure :data.json/write
+                            [(vec (repeat 10000 nil))]))
+        :value/lazy-result-opaque?
+        (= {:value/kind :opaque :value/type "clojure.lang.LazySeq"}
+           (:value (context/evaluate minimal "(map str [1 2])")))
+        :value/regex-result-opaque?
+        (= {:value/kind :opaque :value/type "java.util.regex.Pattern"}
+           (:value (context/evaluate minimal "#\"x\"")))
+        :value/instant-result-opaque?
+        (= {:value/kind :opaque :value/type "java.util.Date"}
+           (:value (context/evaluate minimal
+                                     "#inst \"2026-01-01T00:00:00.000-00:00\"")))
+        :value/uuid-result-opaque?
+        (= {:value/kind :opaque :value/type "java.util.UUID"}
+           (:value (context/evaluate minimal
+                                     "#uuid \"00000000-0000-0000-0000-000000000000\"")))
         :events/bounded? (and (= 3 (count events)) (pos? dropped))
         :events/structured?
         (every? #(and (integer? (:event/seq %))
@@ -303,13 +340,12 @@
                       (not (contains? (:data %) :args))
                       (not (contains? (:data %) :result)))
                 events)}
-       (project-assurance bb4t-commit)))))
+       (project-assurance)))))
 
 (defn run-corpus
   "Runs the shared JVM/native BB1 authority corpus and returns inert evidence."
-  [bb4t-commit project-root]
-  (let [runtime (runtime/create {:bb4t/commit bb4t-commit
-                                 :resources {:project/root project-root}})
+  [project-root]
+  (let [runtime (runtime/create {:resources {:project/root project-root}})
         contexts (into {} (map (fn [profile]
                                 [profile (context/create runtime {:profile profile})]))
                        profiles)
@@ -338,7 +374,7 @@
         event-types (frequencies (map :event/type (:events (events/snapshot runtime))))
         discovery (discovery-results (get contexts :agent/project-read))
         canonicalization (canonical-results)
-        assurance (assurance-results bb4t-commit project-root runtime contexts)
+         assurance (assurance-results project-root runtime contexts)
         pass? (and (= (count case-results) authority-pass-count value-pass-count)
                    host-denied?
                    independent-state?
@@ -397,9 +433,8 @@
 
 (defn measure-context-construction
   "Measures fresh native/JVM context construction without affecting coordinates."
-  [bb4t-commit project-root]
-  (let [runtime (runtime/create {:bb4t/commit bb4t-commit
-                                 :resources {:project/root project-root}})]
+  [project-root]
+  (let [runtime (runtime/create {:resources {:project/root project-root}})]
     (doseq [profile profiles
             _ (range 5)]
       (context/create runtime {:profile profile}))

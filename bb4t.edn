@@ -20,11 +20,18 @@
    :leiningen "2.9.8"}
 
  :features
- {:mode :upstream-baseline}
+  {:mode :upstream-baseline
+   :compiled-universe
+   {:distribution :babashka/upstream-baseline
+    :version "1.13.219"
+    :source/commit "140ef9dcd770a54457a02fa29c3a2f643f4968d4"
+    :feature-selection :upstream/default}}
 
  :libraries
- {:cheshire {:availability :compiled
-             :use :bounded-json-capability}}
+  {:catalogued
+   {:cheshire {:availability :compiled
+               :use :bounded-json-capability}}
+   :uncatalogued-compiled-universe :upstream-baseline}
 
  :capabilities
  {:catalog/ns bb4t.catalog

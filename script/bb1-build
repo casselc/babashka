@@ -3,7 +3,6 @@
 set -euo pipefail
 
 BB1_REPOSITORY="https://github.com/casselc/babashka.git"
-BB1_BRANCH="bb4t/bb1"
 BB0_COMMIT="eb88396c2e34c2e1fbb3e60562267527ad515191"
 UPSTREAM_COMMIT="140ef9dcd770a54457a02fa29c3a2f643f4968d4"
 SCI_COMMIT="64163c4560e085ffdcf47951b406f62f753b7f4c"
@@ -48,8 +47,11 @@ ARTIFACT_DIR="$ROOT_DIR/artifacts/bb1"
 mkdir -p "$WORK_ROOT" "$ARTIFACT_DIR"
 SOURCE_DIR=$(mktemp -d "$WORK_ROOT/source.XXXXXX")
 
-git clone --branch "$BB1_BRANCH" --depth 10 --recursive \
-    "$BB1_REPOSITORY" "$SOURCE_DIR"
+git -C "$SOURCE_DIR" init
+git -C "$SOURCE_DIR" remote add origin "$BB1_REPOSITORY"
+git -C "$SOURCE_DIR" fetch --depth 10 origin "$BB1_COMMIT"
+git -C "$SOURCE_DIR" checkout --detach FETCH_HEAD
+git -C "$SOURCE_DIR" submodule update --init --recursive --depth 1
 
 ACTUAL_COMMIT=$(git -C "$SOURCE_DIR" rev-parse HEAD)
 if [[ "$ACTUAL_COMMIT" != "$BB1_COMMIT" ]]; then
@@ -65,6 +67,9 @@ if [[ "$ACTUAL_SCI_COMMIT" != "$SCI_COMMIT" ]]; then
     echo "Expected SCI $SCI_COMMIT, resolved $ACTUAL_SCI_COMMIT" >&2
     exit 1
 fi
+
+printf '%s\n' "$BB1_COMMIT" \
+    > "$SOURCE_DIR/resources/META-INF/babashka/bb4t-commit"
 
 LEIN_BIN_DIR=$(dirname "$LEIN_BIN")
 BUILD_PATH="$GRAALVM_HOME/bin:$LEIN_BIN_DIR"

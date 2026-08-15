@@ -1395,7 +1395,7 @@ Use bb run --help to show this help output.
 
 (defn- invoke-main [args]
   (if (= "--bb4t-internal" (first args))
-    (bb4t-internal/run build-commit-sha (rest args))
+    (bb4t-internal/run (rest args))
     (apply main args)))
 
 (defn -main

@@ -1,8 +1,10 @@
 (ns bb4t.kernel
   (:require [bb4t.canonical :as canonical]
-            [bb4t.catalog :as catalog]
-            [cheshire.core :as json]
-            [clojure.string :as str]
+             [bb4t.catalog :as catalog]
+             [bb4t.value :as value]
+             [cheshire.core :as json]
+             [clojure.java.io :as io]
+             [clojure.string :as str]
             [sci.core :as sci])
   (:import [java.io ByteArrayOutputStream StringReader StringWriter]
            [java.nio ByteBuffer]
@@ -22,6 +24,13 @@
 
 (def ^:private sci-commit
   "64163c4560e085ffdcf47951b406f62f753b7f4c")
+
+(def ^:private build-commit
+  (or (some-> (io/resource "META-INF/babashka/bb4t-commit")
+              slurp
+              str/trim
+              not-empty)
+      (throw (ex-info "BB1 build provenance resource is missing" {}))))
 
 (def ^:private default-event-limit 256)
 (def ^:private max-json-bytes 1048576)
@@ -317,12 +326,9 @@
 (defn create-runtime
   "Constructs a trusted live runtime from compiled data and resource bindings."
   [opts]
-  (exact-keys! :runtime-options opts #{:bb4t/commit :resources :event-limit})
-  (let [commit (:bb4t/commit opts)
-        resource-input (or (:resources opts) {})
+  (exact-keys! :runtime-options opts #{:resources :event-limit})
+  (let [resource-input (or (:resources opts) {})
         event-limit (or (:event-limit opts) default-event-limit)]
-    (when-not (and (string? commit) (not (str/blank? commit)))
-      (fail! "Runtime requires a non-empty bb4t commit" {}))
     (when-not (map? resource-input)
       (fail! "Runtime resources must be a map" {}))
     (when-not (and (integer? event-limit) (pos? event-limit))
@@ -330,20 +336,25 @@
     (validate-catalog catalog/capability-catalog (set (keys implementations)))
     (let [resources (into {} (map (fn [[id root]] [id (resolve-root id root)]))
                           resource-input)
-          resource-descriptions
-          (into {} (map (fn [[id ^Path root]]
-                          [id {:resource/id id
-                               :resource/type :filesystem/root
-                               :resource/path (str root)}]))
-                resources)
-          manifest {:manifest/version 1
-                    :manifest/type :bb4t/runtime-manifest
-                    :bb4t/commit commit
-                    :upstream/commit upstream-commit
-                    :sci/commit sci-commit
-                    :compiled/libraries #{:cheshire}
-                    :compiled/capabilities
-                    (set (keys (:capabilities catalog/capability-catalog)))
+           resource-descriptions
+           (into {} (map (fn [[id ^Path root]]
+                           [id {:resource/id id
+                                :resource/type :filesystem/root
+                                :resource/path (str root)}]))
+                 resources)
+           manifest {:manifest/version 1
+                     :manifest/type :bb4t/runtime-manifest
+                     :bb4t/commit build-commit
+                     :upstream/commit upstream-commit
+                     :sci/commit sci-commit
+                     :compiled/universe
+                     {:distribution :babashka/upstream-baseline
+                      :version "1.13.219"
+                      :source/commit upstream-commit
+                      :feature-selection :upstream/default}
+                     :catalogued/libraries #{:cheshire}
+                     :compiled/capabilities
+                     (set (keys (:capabilities catalog/capability-catalog)))
                     :sci/base {:construction :fresh
                                :authorization :positive-allowlist
                                :allow catalog/base-allow
@@ -587,13 +598,21 @@
    :context/surface {:allow (:allow context)
                      :deny catalog/base-deny
                      :projections (:projections context)
-                     :projection-namespace-count
+                     :base-namespace-count 1
+                     :base-var-count 2
+                     :capability-projection-namespace-count
                      (count (set (map (comp namespace :sci/var)
                                       (:projections context))))
-                     :projection-var-count (count (:projections context))
-                     :projected-class-count 0
-                     :closed-default-class-count
-                     (count catalog/closed-default-classes)
+                     :capability-projection-var-count
+                     (count (:projections context))
+                     :total-projected-namespace-count
+                     (inc (count (set (map (comp namespace :sci/var)
+                                           (:projections context)))))
+                     :total-projected-var-count
+                     (+ 2 (count (:projections context)))
+                      :projected-class-count 0
+                      :closed-default-class-count
+                      (count catalog/closed-default-classes)
                      :supplied-import-count 0}})
 
 (defn evaluate
@@ -609,7 +628,7 @@
                       (sci/eval-string* (:sci-context context) source))]
           (emit! (:runtime context) (:coordinate context) (:instance-id context)
                  :context/evaluated {:status :ok})
-          {:value value :out (str out) :err (str err)})
+          {:value (value/describe value) :out (str out) :err (str err)})
         (catch Throwable error
           (emit! (:runtime context) (:coordinate context) (:instance-id context)
                  :context/evaluation-failed
@@ -619,9 +638,10 @@
 (defn invoke [context operation-id args]
   (when-not (vector? args)
     (fail! "Semantic operation arguments must be a vector" {:args args}))
-  (invoke-authorized (:runtime context) (:effective context)
-                     (:coordinate context) (:instance-id context)
-                     operation-id args))
+  (value/describe
+   (invoke-authorized (:runtime context) (:effective context)
+                      (:coordinate context) (:instance-id context)
+                      operation-id args)))
 
 (defn event-snapshot [runtime]
   {:events @(:events runtime)

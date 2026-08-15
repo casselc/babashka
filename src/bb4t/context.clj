@@ -12,6 +12,6 @@
   (kernel/context-description context))
 
 (defn evaluate
-  "Evaluates source in a persistent Context and returns value/stdout/stderr data."
+  "Evaluates source and returns an inert value description plus output data."
   [context source]
   (kernel/evaluate context source))

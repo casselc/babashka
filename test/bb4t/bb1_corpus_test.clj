@@ -7,7 +7,7 @@
       (System/getProperty "user.dir")))
 
 (deftest shared-authority-corpus-test
-  (let [result (corpus/run-corpus "bb1-test" project-root)]
+  (let [result (corpus/run-corpus project-root)]
     (is (:pass? result))
     (is (= 51 (:authority/case-count result)))
     (is (= (:authority/case-count result)

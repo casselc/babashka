@@ -2,7 +2,7 @@
   (:require [bb4t.kernel :as kernel]))
 
 (defn create
-  "Creates a trusted live runtime. Options bind build provenance and resources."
+  "Creates a trusted live runtime. Build provenance is embedded in the artifact."
   [opts]
   (kernel/create-runtime opts))
 

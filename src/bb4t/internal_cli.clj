@@ -4,23 +4,22 @@
 
 (defn run
   "Runs fixed host-side BB1 evidence operations without widening ordinary SCI."
-  [bb4t-commit args]
+  [args]
   (case (vec args)
     ["bb1-corpus"]
-    (let [result (corpus/run-corpus bb4t-commit
-                                    (System/getProperty "user.dir"))]
+    (let [result (corpus/run-corpus (System/getProperty "user.dir"))]
       (prn result)
       {:exit (if (:pass? result) 0 1) :force-exit false})
 
     ["bb1-measure"]
     (do
       (prn (corpus/measure-context-construction
-            bb4t-commit (System/getProperty "user.dir")))
+            (System/getProperty "user.dir")))
       {:exit 0 :force-exit false})
 
     ["manifest"]
     (do
-      (prn (runtime/describe (runtime/create {:bb4t/commit bb4t-commit})))
+      (prn (runtime/describe (runtime/create {})))
       {:exit 0 :force-exit false})
 
     (do

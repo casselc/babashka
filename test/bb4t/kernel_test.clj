@@ -19,9 +19,14 @@
   ([] (test-runtime {}))
   ([opts]
    (runtime/create
-    (merge {:bb4t/commit "bb1-test"
-            :resources {:project/root project-root}}
-           opts))))
+    (merge {:resources {:project/root project-root}}
+            opts))))
+
+(defn value-data [result]
+  (get-in result [:value :value/data]))
+
+(defn invoked-data [description]
+  (:value/data description))
 
 (deftest manifest-and-catalog-are-inert-test
   (let [runtime (test-runtime)
@@ -37,7 +42,15 @@
            (get-in runtime-description
                    [:runtime/manifest :upstream/commit])))
     (is (= "64163c4560e085ffdcf47951b406f62f753b7f4c"
-           (get-in runtime-description [:runtime/manifest :sci/commit])))))
+           (get-in runtime-description [:runtime/manifest :sci/commit])))
+    (is (= "development"
+           (get-in runtime-description [:runtime/manifest :bb4t/commit])))
+    (is (= :babashka/upstream-baseline
+           (get-in runtime-description
+                   [:runtime/manifest :compiled/universe :distribution])))
+    (is (= #{:cheshire}
+           (get-in runtime-description
+                   [:runtime/manifest :catalogued/libraries])))))
 
 (deftest catalog-validation-fails-closed-test
   (is (thrown? clojure.lang.ExceptionInfo
@@ -74,7 +87,20 @@
     (is (seq (get-in minimal-description [:context/surface :allow])))
     (is (seq (get-in minimal-description [:context/surface :deny])))
     (is (= 0 (get-in minimal-description
-                     [:context/surface :projected-class-count])))
+                      [:context/surface :projected-class-count])))
+    (is (= 1 (get-in minimal-description
+                     [:context/surface :base-namespace-count])))
+    (is (= 2 (get-in minimal-description
+                     [:context/surface :base-var-count])))
+    (is (= 0 (get-in minimal-description
+                     [:context/surface
+                      :capability-projection-namespace-count])))
+    (is (= 0 (get-in minimal-description
+                     [:context/surface :capability-projection-var-count])))
+    (is (= 1 (get-in minimal-description
+                     [:context/surface :total-projected-namespace-count])))
+    (is (= 2 (get-in minimal-description
+                     [:context/surface :total-projected-var-count])))
     (is (= (:context/coordinate minimal-description)
            (:context/coordinate (context/describe equivalent))))
     (is (not= (:context/coordinate minimal-description)
@@ -105,7 +131,7 @@
 
 (deftest malformed-context-specs-fail-before-construction-test
   (let [runtime (test-runtime)
-        runtime-without-project (runtime/create {:bb4t/commit "bb1-test"})]
+        runtime-without-project (runtime/create {})]
     (doseq [spec [{:profile :unknown/profile}
                   {:profile :agent/minimal :unknown/value true}
                   {:profile :agent/minimal
@@ -125,11 +151,11 @@
                  (context/create runtime-without-project
                                  {:profile :agent/project-read})))
     (is (thrown? clojure.lang.ExceptionInfo
-                 (runtime/create {:bb4t/commit "test"
-                                  :implementation/registry {}})))
+                 (runtime/create {:implementation/registry {}})))
     (is (thrown? clojure.lang.ExceptionInfo
-                 (runtime/create {:bb4t/commit "test"
-                                  :resources {:attacker/root project-root}})))))
+                 (runtime/create {:bb4t/commit "forged"})))
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (runtime/create {:resources {:attacker/root project-root}})))))
 
 (deftest operation-dispatch-rechecks-grants-test
   (let [runtime (test-runtime)
@@ -139,7 +165,8 @@
                           #"not granted"
                           (operation/invoke minimal :project/read
                                             ["deps.edn"])))
-    (is (string? (operation/invoke project :project/read ["deps.edn"])))
+    (is (string? (invoked-data
+                  (operation/invoke project :project/read ["deps.edn"]))))
     (is (thrown? clojure.lang.ExceptionInfo
                  (operation/invoke project :unknown/operation [])))
     (is (thrown? clojure.lang.ExceptionInfo
@@ -153,11 +180,11 @@
                  (context/evaluate minimal
                                    "(data.json/read \"{\\\"x\\\":1}\")")))
     (is (= {"x" 1}
-           (:value (context/evaluate pure
-                                     "(data.json/read \"{\\\"x\\\":1}\")"))))
+           (value-data (context/evaluate pure
+                                         "(data.json/read \"{\\\"x\\\":1}\")"))))
     (is (= "{\"x\":1}"
-           (:value (context/evaluate pure
-                                     "(data.json/write {\"x\" 1})"))))
+           (value-data (context/evaluate pure
+                                         "(data.json/write {\"x\" 1})"))))
     (is (thrown? Throwable
                  (context/evaluate pure
                                    "(data.json/read \"{\\\"x\\\":1} trailing\")")))
@@ -178,12 +205,12 @@
       (Files/writeString file "1234" (make-array OpenOption 0))
       (Files/write invalid (byte-array [(unchecked-byte 0xc3) (byte 0x28)])
                    (make-array OpenOption 0))
-      (let [runtime (runtime/create {:bb4t/commit "bb1-test"
-                                     :resources {:project/root root}})
+      (let [runtime (runtime/create {:resources {:project/root root}})
             context (context/create runtime
                                     {:profile :agent/project-read
                                      :limits {:project/read-max-bytes 4}})]
-        (is (= "1234" (operation/invoke context :project/read ["file.txt"])))
+        (is (= "1234" (invoked-data
+                       (operation/invoke context :project/read ["file.txt"]))))
         (is (thrown? clojure.lang.ExceptionInfo
                      (operation/invoke context :project/read ["../outside"])))
         (is (thrown? clojure.lang.ExceptionInfo
@@ -212,8 +239,7 @@
       (Files/writeString outside "secret" (make-array OpenOption 0))
       (Files/createSymbolicLink link outside
                                 (make-array java.nio.file.attribute.FileAttribute 0))
-      (let [runtime (runtime/create {:bb4t/commit "bb1-test"
-                                     :resources {:project/root root}})
+      (let [runtime (runtime/create {:resources {:project/root root}})
             context (context/create runtime {:profile :agent/project-read})]
         (is (thrown? clojure.lang.ExceptionInfo
                      (operation/invoke context :project/read ["escape.txt"]))))
@@ -227,12 +253,20 @@
   (let [runtime (test-runtime)
         project (context/create runtime {:profile :agent/project-read})]
     (is (= ['project/read]
-           (:value (context/evaluate project "(apropos \"project\")"))))
+            (value-data (context/evaluate project "(apropos \"project\")"))))
     (let [result (context/evaluate project "(doc project/read)")]
       (is (re-find #"project/read" (:out result)))
       (is (re-find #"authorized project root" (:out result))))
     (is (= :inert-data (:value/kind (value/describe {:ok true}))))
-    (is (= :opaque (:value/kind (value/describe runtime))))))
+    (is (= :opaque (:value/kind (value/describe runtime))))
+    (doseq [source ["(map str [1 2])"
+                    "#\"x\""
+                    "#inst \"2026-01-01T00:00:00.000-00:00\""
+                    "#uuid \"00000000-0000-0000-0000-000000000000\""]]
+      (let [description (:value (context/evaluate project source))]
+        (is (= :opaque (:value/kind description)))
+        (is (string? (:value/type description)))
+        (is (not (contains? description :value/data)))))))
 
 (deftest events-are-bounded-and-sanitized-test
   (let [runtime (test-runtime {:event-limit 4})

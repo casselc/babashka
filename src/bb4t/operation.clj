@@ -2,6 +2,6 @@
   (:require [bb4t.kernel :as kernel]))
 
 (defn invoke
-  "Invokes a SemanticOperation after rechecking the Context's effective grant."
+  "Invokes a granted SemanticOperation and returns an inert value description."
   [context operation-id args]
   (kernel/invoke context operation-id args))
