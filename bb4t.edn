@@ -5,15 +5,19 @@
   :profile :upstream-baseline}
 
  :upstream
- {:repository "https://github.com/babashka/babashka"
-  :tag "v1.13.219"
-  :commit :bb4t.todo/record-during-bb0}
+  {:repository "https://github.com/babashka/babashka"
+   :tag "v1.13.219"
+   :commit "140ef9dcd770a54457a02fa29c3a2f643f4968d4"
+   :tree "ac30a258a272273d77a3ceb546281e3e18aca673"}
 
- :build
- {:platform :bb4t.todo/record-during-bb0
-  :jdk :bb4t.todo/record-during-bb0
-  :graalvm :bb4t.todo/record-during-bb0
-  :native-image :bb4t.todo/record-during-bb0}
+  :build
+  {:platform {:os "Ubuntu 26.04 LTS"
+              :kernel "Linux 7.0.0-29-generic"
+              :arch "x86_64"}
+   :jdk "Oracle GraalVM Java 25.0.4+7.1"
+   :graalvm "Oracle GraalVM 25.0.4+7.1"
+   :native-image "Oracle GraalVM native-image 25.0.4"
+   :leiningen "2.9.8"}
 
  :features
  {:mode :upstream-baseline}

@@ -1,0 +1,82 @@
+{:schema/version 1
+
+ :upstream
+ {:repository "https://github.com/babashka/babashka"
+  :tag "v1.13.219"
+  :commit "140ef9dcd770a54457a02fa29c3a2f643f4968d4"
+  :tree "ac30a258a272273d77a3ceb546281e3e18aca673"}
+
+ :platform
+ {:os "Ubuntu 26.04 LTS"
+  :kernel "Linux 7.0.0-29-generic"
+  :arch "x86_64"
+  :cpu "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S"
+  :logical-cpus 32
+  :memory-bytes 131738619904
+  :glibc "2.43"
+  :gcc "15.2.0"}
+
+ :toolchain
+ {:java "Oracle GraalVM Java 25.0.4+7.1 (25.0.4+7-LTS-jvmci-b01)"
+  :graalvm "Oracle GraalVM 25.0.4+7.1"
+  :native-image "native-image 25.0.4 2026-07-21; Substrate VM serial GC, compressed references"
+  :leiningen "2.9.8"
+  :graalvm-archive-sha256 "76007c309f821aaf435bce63162ea0395587fc77350801c81643fe7feea37276"}
+
+ :build
+ {:command ["env"
+            "PATH=/tmp/opencode/bb0-tools/bin:$PATH"
+            "LEIN_HOME=/tmp/opencode/bb0-tools/lein-home"
+            "GRAALVM_HOME=/tmp/opencode/bb0-tools/graalvm-25.0.4"
+            "BB0_WORK_ROOT=/tmp/opencode/bb0-build"
+            "script/bb0-build"]
+  :measured-steps ["script/uberjar" "script/compile"]
+  :effective-path "/tmp/opencode/bb0-tools/graalvm-25.0.4/bin:/tmp/opencode/bb0-tools/bin:/usr/local/bin:/usr/bin:/bin"
+  :wall-ms 72140
+  :peak-rss-bytes 4829384704
+  :result :pass}
+
+ :binary
+ {:path "artifacts/bb0/bb"
+  :bytes 87296256
+  :sha256 "8acf3011fdce4878103e008a88eaf022b638eea2ab3c7001784f22bdaa23418b"
+  :format "ELF 64-bit LSB PIE, x86-64, dynamically linked, stripped"
+  :dynamic-libraries ["libz.so.1" "libc.so.6"]}
+
+ :startup
+ {:command ["/home/chuck/opencode/src/bb4t/artifacts/bb0/bb" "-e" "nil"]
+  :environment {:home "/tmp/opencode/bb0-startup-home"
+                :path "/usr/bin:/bin"
+                :page-cache :warm}
+  :clock "Bash EPOCHREALTIME, microsecond resolution"
+  :percentile-method "nearest-rank"
+  :samples 30
+  :median-ms 9.908
+  :p95-ms 10.639
+  :min-ms 8.173
+  :max-ms 14.416}
+
+ :runtime
+ {:reported-version "babashka v1.13.219"
+  :reported-git-sha "140ef9dcd770a54457a02fa29c3a2f643f4968d4"
+  :smoke-tests
+  [{:name :version :command ["artifacts/bb0/bb" "version"] :result :pass}
+   {:name :describe :command ["artifacts/bb0/bb" "describe"] :result :pass}
+   {:name :evaluation
+    :command ["artifacts/bb0/bb" "-e" "(assert (= 3 (+ 1 2))) (println :ok)"]
+    :result :pass}
+   {:name :relocated-clean-environment :result :pass}
+   {:name :upstream-native-suite
+    :command ["env" "BABASHKA_TEST_ENV=native" "script/test"]
+    :result :pass
+    :reported [{:tests 347 :assertions 980 :failures 0 :errors 0}
+               {:selector :flaky :tests 15 :assertions 23 :failures 0 :errors 0}
+               {:selector :preloads :tests 1 :assertions 1 :failures 0 :errors 0}
+               {:selector :preloads-file-location :tests 1 :assertions 1 :failures 0 :errors 0}
+               {:selector :classpath-env :tests 1 :assertions 1 :failures 0 :errors 0}
+               {:selector :pod :tests 1 :assertions 2 :failures 0 :errors 0}
+               {:selector :socket-repl :tests 3 :assertions 18 :failures 0 :errors 0}]}]
+  :notes
+  ["Build timing excludes clone/tool installation and includes dependency resolution in an isolated home."
+   "Startup samples used a warm filesystem/page cache."
+   "The broader network-sensitive script/run_lib_tests suite was not run."]}}
