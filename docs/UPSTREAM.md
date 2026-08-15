@@ -7,11 +7,13 @@ The bootstrap branch was created from the selected upstream Babashka release:
 ```text
 upstream repository: https://github.com/babashka/babashka
 selected tag:        v1.13.219
-selected commit:     FILL DURING BB0
+selected commit:     140ef9dcd770a54457a02fa29c3a2f643f4968d4
+selected tree:       ac30a258a272273d77a3ceb546281e3e18aca673
 ```
 
-Do not trust this document's tag-to-commit mapping until BB0 records the actual Git
-object from the local repository.
+BB0 verified the tag against the canonical upstream repository on 2026-08-14. The
+bootstrap branch itself is based on a later upstream commit; `script/bb0-build`
+therefore builds the selected tag in a fresh detached clone.
 
 ## Record during BB0
 
