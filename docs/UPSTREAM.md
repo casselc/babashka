@@ -15,6 +15,24 @@ BB0 verified the tag against the canonical upstream repository on 2026-08-14.
 The working `bb4t/bootstrap` lineage is rooted directly at that commit, and
 `script/bb0-build` independently verifies it in a fresh detached clone.
 
+## Product branch model
+
+The fork's `master` remains available for upstream-oriented maintenance. It is not
+the bb4t product integration branch.
+
+```text
+v1.13.219
+  -> bb4t/bootstrap
+  -> bb4t/bb0 (tagged bb4t-bb0)
+  -> bb4t/dev
+       -> bounded milestone branches such as bb4t/bb1
+```
+
+`bb4t/dev` is the long-lived product/dogfooding integration branch. Milestone work
+branches from it and merges back only after the milestone evidence and review gate.
+Experiments should name immutable commits/manifests, not the moving integration
+branch.
+
 ## Record during BB0
 
 Capture:

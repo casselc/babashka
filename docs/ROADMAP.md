@@ -1,6 +1,7 @@
-# bb4t Roadmap
+# bb4t Runtime Roadmap
 
-This roadmap is intentionally shorter than the long-term research vision.
+This document tracks bounded runtime milestones. Product and research evolution are
+kept separate in `docs/PRODUCT_ROADMAP.md` and `docs/RESEARCH_ROADMAP.md`.
 
 ## BB0 — upstream baseline
 

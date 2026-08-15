@@ -1,73 +1,62 @@
 # Current Scope
 
-**Active milestone:** BB0 — reproduce and measure upstream baseline.
+**Active milestone:** BB1 - bounded declarative SCI contexts.
 
-## BB0 question
+## Purpose
 
-Can this branch reproduce a pinned upstream Babashka native build on the implementation
-machine with a scripted procedure and enough measurements/provenance to serve as the
-baseline for later bb4t changes?
+Answer one question:
 
-## IN
+> Can one pinned native bb4t binary construct multiple declaratively specified SCI
+> contexts with materially different, fail-closed authority surfaces?
 
-- record exact upstream tag/commit;
-- record local platform/JDK/GraalVM/native-image coordinates;
-- inspect and use upstream build tooling;
-- create a repeatable build command/script if useful;
-- build the unmodified native executable;
-- run appropriate upstream/smoke checks;
-- record binary digest/size;
-- record baseline build/startup/runtime measurements;
-- create/update `bb4t.edn` with observed coordinates;
-- write `docs/BB0_FINDINGS.md`.
+BB1 demonstrates semantic capability restriction within the runtime. It does not
+prove hostile-code filesystem or process isolation.
 
-## OUT
+## Owned Work
 
-Do not implement any of the following during BB0:
+- data-only `RuntimeManifest`, `CapabilityCatalog`, `CapabilitySpec`, and
+  `ContextSpec` descriptions;
+- a separate trusted implementation registry and live `Context` objects;
+- explicit `SemanticOperation` dispatch;
+- deterministic canonicalization and SHA-256 coordinates;
+- fresh SCI contexts built additively from a minimal safe base;
+- profiles `:agent/minimal`, `:transform/pure`, and `:agent/project-read`;
+- one root-contained, read-only `project/read` semantic capability;
+- a small application-facing describe/create/invoke/events seam;
+- structured in-memory operation events, not a durable journal;
+- positive and negative authority tests on JVM and native paths;
+- BB1 measurements, machine-readable evidence, and findings.
 
-- feature/library removal;
-- library replacements;
-- Geschichte/Datahike/Konserve/Hasch;
-- Charred/Oda evaluation;
-- capability catalog;
-- `ContextSpec`;
-- dynamic SCI profiles;
-- Chiasmus;
-- Prolog or Z3;
-- P/Quint/Alloy/Event-B/Lean/Dafny/Why3;
-- Cedar;
-- Grain integration;
-- SmolVM integration;
-- Web UI;
-- HTTP API/server;
-- MCP;
-- A2A;
-- ACP;
-- Mycelium;
-- training/evaluation pipeline;
-- Track A changes.
+## Required Outputs
 
-## BB0 acceptance
+- BB1 runtime/catalog/context/operation/event code;
+- executable canonicalization and authority test vectors;
+- `artifacts/bb1-*.edn` evidence;
+- `docs/BB1_FINDINGS.md` with a proceed, revise, or stop recommendation;
+- a fresh review of authority attenuation, fail-closed behavior, canonical/live
+  separation, deterministic coordinates, native parity, fork debt, and client seam.
 
-BB0 is accepted when:
+## Dependencies And References
 
-- [ ] exact upstream source coordinate is recorded;
-- [ ] exact local toolchain/platform coordinate is recorded;
-- [ ] a clean native build succeeds;
-- [ ] build steps are scripted or otherwise reproducible without undocumented manual steps;
-- [ ] binary digest and size are recorded;
-- [ ] baseline measurements are written as EDN;
-- [ ] selected upstream/smoke tests pass, or failures are explicitly explained;
-- [ ] `docs/BB0_FINDINGS.md` clearly states remaining reproducibility gaps;
-- [ ] no unrelated product/runtime feature work entered the diff.
+- immutable BB0 coordinate `bb4t-bb0`;
+- Babashka `v1.13.219`, commit
+  `140ef9dcd770a54457a02fa29c3a2f643f4968d4`;
+- SCI commit `64163c4560e085ffdcf47951b406f62f753b7f4c`;
+- `docs/VISION.md`, `docs/ROADMAP.md`, and ADRs under `docs/architecture/`;
+- only libraries already present in the BB0 compiled runtime.
 
-## Next milestone
+## Explicit Exclusions
 
-BB1 is authorized only after BB0 review.
+- no changes to the original Track A experiment;
+- no bbagent application or TUI;
+- no durable session journal, resume, memory, skills, model loop, or routing;
+- no runtime slimming, build profiles, or library replacement;
+- no new Geschichte, Datahike, Chiasmus, Cedar, Charm, or other runtime dependency;
+- no SmolVM, worker, filesystem/process sandbox, or hostile-code isolation claim;
+- no HTTP, MCP, A2A, ACP, Web UI, or generalized projection framework;
+- no BB2 or later milestone work.
 
-BB1 will answer:
+## Stop Gate
 
-> Can one native binary construct multiple declaratively specified SCI contexts with
-> materially different, fail-closed authority surfaces?
-
-See `docs/ROADMAP.md`.
+Stop after BB1 findings and fresh review. Repair BB1 if the semantic kernel is not
+clean enough for an external bbagent client; do not build bbagent during this scope.
