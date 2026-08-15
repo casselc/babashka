@@ -1,10 +1,11 @@
 (ns bb4t.bb1-corpus
   (:require [bb4t.canonical :as canonical]
             [bb4t.context :as context]
-            [bb4t.events :as events]
-            [bb4t.operation :as operation]
-            [bb4t.runtime :as runtime]
-            [clojure.string :as str])
+             [bb4t.events :as events]
+             [bb4t.operation :as operation]
+             [bb4t.runtime :as runtime]
+             [bb4t.value :as value]
+             [clojure.string :as str])
   (:import [java.nio.file Files OpenOption]
            [java.nio.file.attribute FileAttribute]))
 
@@ -287,6 +288,12 @@
           (canonical/coordinate :bb4t/test-vector (runtime/describe runtime))
           true
           (catch Throwable _ false))
+        :handle/runtime-opaque?
+        (and (not (associative? runtime))
+             (= :opaque (:value/kind (value/describe runtime))))
+        :handle/context-opaque?
+        (and (not (associative? minimal))
+             (= :opaque (:value/kind (value/describe minimal))))
         :runtime/authority-policy-recorded?
         (let [base (get-in (runtime/describe runtime)
                            [:runtime/manifest :sci/base])]

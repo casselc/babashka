@@ -12,10 +12,10 @@
            [java.nio.channels SeekableByteChannel]
            [java.nio.file DirectoryStream Files LinkOption OpenOption Path Paths
             SecureDirectoryStream StandardOpenOption]
-           [java.nio.file.attribute BasicFileAttributes BasicFileAttributeView
-            FileAttribute]
-           [java.time Instant]
-           [java.util UUID]))
+            [java.nio.file.attribute BasicFileAttributes BasicFileAttributeView
+             FileAttribute]
+            [java.time Instant]
+            [java.util Collections Map UUID WeakHashMap]))
 
 (set! *warn-on-reflection* true)
 
@@ -47,6 +47,21 @@
 
 (defn- fail! [message data]
   (throw (ex-info message (assoc data :bb4t/error :validation))))
+
+(def ^:private ^Map runtime-handles
+  (Collections/synchronizedMap (WeakHashMap.)))
+
+(def ^:private ^Map context-handles
+  (Collections/synchronizedMap (WeakHashMap.)))
+
+(defn- register-handle [^Map registry state]
+  (let [handle (Object.)]
+    (.put registry handle state)
+    handle))
+
+(defn- resolve-handle [^Map registry kind handle]
+  (or (.get registry handle)
+      (fail! "Unknown or expired bb4t handle" {:handle/kind kind})))
 
 (defn- exact-keys! [kind value allowed]
   (when-not (map? value)
@@ -323,8 +338,7 @@
              {:resource/id resource-id}))
     real-root))
 
-(defn create-runtime
-  "Constructs a trusted live runtime from compiled data and resource bindings."
+(defn- create-runtime-state
   [opts]
   (exact-keys! :runtime-options opts #{:resources :event-limit})
   (let [resource-input (or (:resources opts) {})
@@ -376,15 +390,22 @@
              {:catalog/coordinate catalog-coordinate})
       runtime)))
 
+(defn create-runtime
+  "Constructs an opaque runtime handle from compiled data and resource bindings."
+  [opts]
+  (register-handle runtime-handles (create-runtime-state opts)))
+
 (defn runtime-description [runtime]
-  {:runtime/manifest (:manifest runtime)
-   :runtime/coordinate (:coordinate runtime)
-   :catalog/coordinate (:catalog-coordinate runtime)
-   :runtime/resources (set (keys (:resource-descriptions runtime)))})
+  (let [runtime (resolve-handle runtime-handles :runtime runtime)]
+    {:runtime/manifest (:manifest runtime)
+     :runtime/coordinate (:coordinate runtime)
+     :catalog/coordinate (:catalog-coordinate runtime)
+     :runtime/resources (set (keys (:resource-descriptions runtime)))}))
 
 (defn catalog-description [runtime]
-  {:catalog/data (:catalog runtime)
-   :catalog/coordinate (:catalog-coordinate runtime)})
+  (let [runtime (resolve-handle runtime-handles :runtime runtime)]
+    {:catalog/data (:catalog runtime)
+     :catalog/coordinate (:catalog-coordinate runtime)}))
 
 (defn- resolve-context-spec [runtime input]
   (exact-keys! :context-spec input
@@ -552,8 +573,7 @@
         (assoc-in [:namespaces 'user 'apropos] apropos-var)
         (assoc-in [:namespaces 'user 'doc] doc-var))))
 
-(defn create-context
-  "Constructs a fresh fail-closed SCI context from a trusted ContextSpec."
+(defn- create-context-state
   [runtime context-spec]
   (let [spec (resolve-context-spec runtime context-spec)
         spec-coordinate (canonical/coordinate :bb4t/context-spec spec)
@@ -589,74 +609,87 @@
             :grants (:requested-capabilities spec)})
     context))
 
+(defn create-context
+  "Constructs an opaque handle for a fresh fail-closed SCI context."
+  [runtime context-spec]
+  (let [runtime (resolve-handle runtime-handles :runtime runtime)]
+    (register-handle context-handles
+                     (create-context-state runtime context-spec))))
+
 (defn context-description [context]
-  {:context/spec (:spec context)
-   :context-spec/coordinate (:spec-coordinate context)
-   :context/effective (:effective context)
-   :context/coordinate (:coordinate context)
-   :context/instance-id (:instance-id context)
-   :context/surface {:allow (:allow context)
-                     :deny catalog/base-deny
-                     :projections (:projections context)
-                     :base-namespace-count 1
-                     :base-var-count 2
-                     :capability-projection-namespace-count
-                     (count (set (map (comp namespace :sci/var)
-                                      (:projections context))))
-                     :capability-projection-var-count
-                     (count (:projections context))
-                     :total-projected-namespace-count
-                     (inc (count (set (map (comp namespace :sci/var)
-                                           (:projections context)))))
-                     :total-projected-var-count
-                     (+ 2 (count (:projections context)))
-                      :projected-class-count 0
-                      :closed-default-class-count
-                      (count catalog/closed-default-classes)
-                     :supplied-import-count 0}})
+  (let [context (resolve-handle context-handles :context context)]
+    {:context/spec (:spec context)
+     :context-spec/coordinate (:spec-coordinate context)
+     :context/effective (:effective context)
+     :context/coordinate (:coordinate context)
+     :context/instance-id (:instance-id context)
+     :context/surface {:allow (:allow context)
+                       :deny catalog/base-deny
+                       :projections (:projections context)
+                       :base-namespace-count 1
+                       :base-var-count 2
+                       :capability-projection-namespace-count
+                       (count (set (map (comp namespace :sci/var)
+                                        (:projections context))))
+                       :capability-projection-var-count
+                       (count (:projections context))
+                       :total-projected-namespace-count
+                       (inc (count (set (map (comp namespace :sci/var)
+                                             (:projections context)))))
+                       :total-projected-var-count
+                       (+ 2 (count (:projections context)))
+                       :projected-class-count 0
+                       :closed-default-class-count
+                       (count catalog/closed-default-classes)
+                       :supplied-import-count 0}}))
 
 (defn evaluate
   "Evaluates source in one persistent context and returns structured output."
   [context source]
-  (when-not (string? source)
-    (fail! "Context evaluation requires source text" {}))
-  (locking (:lock context)
-    (let [out (StringWriter.)
-          err (StringWriter.)]
-      (try
-        (let [value (sci/binding [sci/out out sci/err err]
-                      (sci/eval-string* (:sci-context context) source))]
-          (emit! (:runtime context) (:coordinate context) (:instance-id context)
-                 :context/evaluated {:status :ok})
-          {:value (value/describe value) :out (str out) :err (str err)})
-        (catch Throwable error
-          (emit! (:runtime context) (:coordinate context) (:instance-id context)
-                 :context/evaluation-failed
-                 {:status :error :error/type (.getName (class error))})
-          (throw error))))))
+  (let [context (resolve-handle context-handles :context context)]
+    (when-not (string? source)
+      (fail! "Context evaluation requires source text" {}))
+    (locking (:lock context)
+      (let [out (StringWriter.)
+            err (StringWriter.)]
+        (try
+          (let [value (sci/binding [sci/out out sci/err err]
+                        (sci/eval-string* (:sci-context context) source))]
+            (emit! (:runtime context) (:coordinate context) (:instance-id context)
+                   :context/evaluated {:status :ok})
+            {:value (value/describe value) :out (str out) :err (str err)})
+          (catch Throwable error
+            (emit! (:runtime context) (:coordinate context) (:instance-id context)
+                   :context/evaluation-failed
+                   {:status :error :error/type (.getName (class error))})
+            (throw error)))))))
 
 (defn invoke [context operation-id args]
-  (when-not (vector? args)
-    (fail! "Semantic operation arguments must be a vector" {:args args}))
-  (value/describe
-   (invoke-authorized (:runtime context) (:effective context)
-                      (:coordinate context) (:instance-id context)
-                      operation-id args)))
+  (let [context (resolve-handle context-handles :context context)]
+    (when-not (vector? args)
+      (fail! "Semantic operation arguments must be a vector" {:args args}))
+    (value/describe
+     (invoke-authorized (:runtime context) (:effective context)
+                        (:coordinate context) (:instance-id context)
+                        operation-id args))))
 
 (defn event-snapshot [runtime]
-  {:events @(:events runtime)
-   :events/dropped @(:dropped runtime)})
+  (let [runtime (resolve-handle runtime-handles :runtime runtime)]
+    {:events @(:events runtime)
+     :events/dropped @(:dropped runtime)}))
 
 (defn context-event-snapshot [context]
-  {:events (filterv #(= (:instance-id context) (:context/instance-id %))
-                    @(:events (:runtime context)))
-   :events/dropped @(:dropped (:runtime context))})
+  (let [context (resolve-handle context-handles :context context)]
+    {:events (filterv #(= (:instance-id context) (:context/instance-id %))
+                      @(:events (:runtime context)))
+     :events/dropped @(:dropped (:runtime context))}))
 
 (defn subscribe [runtime subscriber]
-  (when-not (ifn? subscriber)
-    (fail! "Event subscriber must be callable" {}))
-  (let [subscriber-id (str (UUID/randomUUID))]
-    (swap! (:subscribers runtime) assoc subscriber-id subscriber)
-    (fn unsubscribe []
-      (swap! (:subscribers runtime) dissoc subscriber-id)
-      nil)))
+  (let [runtime (resolve-handle runtime-handles :runtime runtime)]
+    (when-not (ifn? subscriber)
+      (fail! "Event subscriber must be callable" {}))
+    (let [subscriber-id (str (UUID/randomUUID))]
+      (swap! (:subscribers runtime) assoc subscriber-id subscriber)
+      (fn unsubscribe []
+        (swap! (:subscribers runtime) dissoc subscriber-id)
+        nil))))

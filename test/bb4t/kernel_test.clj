@@ -36,6 +36,8 @@
                                        runtime-description)))
     (is (string? (canonical/coordinate :bb4t/test-vector
                                        catalog-description)))
+    (is (not (associative? runtime)))
+    (is (nil? (get runtime :manifest)))
     (is (thrown? clojure.lang.ExceptionInfo
                  (canonical/coordinate :bb4t/test-vector runtime)))
     (is (= "140ef9dcd770a54457a02fa29c3a2f643f4968d4"
@@ -83,6 +85,8 @@
                          :requested-capabilities
                          #{:data/json-read :data/json-write}})
         minimal-description (context/describe minimal)]
+    (is (not (associative? minimal)))
+    (is (nil? (get minimal :sci-context)))
     (is (= #{} (get-in minimal-description
                        [:context/effective :context/grants])))
     (is (seq (get-in minimal-description [:context/surface :allow])))
