@@ -2,7 +2,6 @@ FROM ubuntu:26.04@sha256:678c6550cc43645e08669028bc177f50be4e7c5b8cca677067b1914
 
 ARG TARGETOS
 ARG TARGETARCH
-ARG BB1_COMMIT
 ARG GRAALVM_VERSION=25.0.4
 ARG GRAALVM_FEATURE_VERSION=25
 ARG GRAALVM_ARCHIVE_SHA256=76007c309f821aaf435bce63162ea0395587fc77350801c81643fe7feea37276
@@ -20,8 +19,7 @@ RUN if { [ -n "$TARGETOS" ] && [ "$TARGETOS" != "linux" ]; } \
       || { [ -n "$TARGETARCH" ] && [ "$TARGETARCH" != "amd64" ]; }; then \
       echo "Dockerfile.bb1 is linux/amd64-only; got TARGETOS=$TARGETOS TARGETARCH=$TARGETARCH" >&2; \
       exit 1; \
-    fi \
-    && test -n "$BB1_COMMIT"
+    fi
 
 RUN apt-get update \
     && apt-get install --no-install-recommends -y \
@@ -56,6 +54,10 @@ RUN curl --fail --location \
     && lein self-install \
     && lein --version \
     && native-image --version
+
+ARG BB1_COMMIT
+
+RUN test -n "$BB1_COMMIT"
 
 WORKDIR /workspace
 

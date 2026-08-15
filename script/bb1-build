@@ -49,7 +49,7 @@ SOURCE_DIR=$(mktemp -d "$WORK_ROOT/source.XXXXXX")
 
 git -C "$SOURCE_DIR" init
 git -C "$SOURCE_DIR" remote add origin "$BB1_REPOSITORY"
-git -C "$SOURCE_DIR" fetch --depth 10 origin "$BB1_COMMIT"
+git -C "$SOURCE_DIR" fetch --filter=blob:none origin "$BB1_COMMIT"
 git -C "$SOURCE_DIR" checkout --detach FETCH_HEAD
 git -C "$SOURCE_DIR" submodule update --init --recursive --depth 1
 
