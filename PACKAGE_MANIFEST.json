@@ -1,0 +1,57 @@
+{
+  "package": "bb4t-bootstrap-starter",
+  "files": {
+    "AGENTS.md": {
+      "bytes": 2736,
+      "sha256": "fd63aae2923116dd0c9bbf96dad371024664d52078b010f882f662d8e8fcb4af"
+    },
+    "INITIAL_PROMPT.md": {
+      "bytes": 2210,
+      "sha256": "1f7bd96984872cdf231dd998fcd33bd62db9f2d4d792014303268b81fdc47494"
+    },
+    "bb4t.edn": {
+      "bytes": 468,
+      "sha256": "3346565bf99576bfb3e3c3ce4234fd5bd71104dc01bb77ae45d805a3bff1c350"
+    },
+    "docs/CURRENT_SCOPE.md": {
+      "bytes": 2081,
+      "sha256": "a4ef94c79d2a62aa8b535d4d4e079a04e1b7a330d936d670e852eb8952f08db3"
+    },
+    "docs/MEASUREMENTS.md": {
+      "bytes": 1923,
+      "sha256": "04a423fc9b6bbb71a4d1d6bc18f750df24ed79254a6f652890fe50e5d632fad4"
+    },
+    "docs/REFERENCES.md": {
+      "bytes": 2683,
+      "sha256": "3d08dee696b3df61b33697b69dfef96f68de9f99545683fe6c57f6d63f35a538"
+    },
+    "docs/ROADMAP.md": {
+      "bytes": 2702,
+      "sha256": "d2f673beaf7b2e6a2fb83e8f0b9e030ab7f36f3d0a63b2e8bfb246845300b574"
+    },
+    "docs/UPSTREAM.md": {
+      "bytes": 1696,
+      "sha256": "ddb5ecc76cd5a615a6be9877b87dfdb92b45f3786b7fc3e0575ae059bcd03da4"
+    },
+    "docs/VISION.md": {
+      "bytes": 5776,
+      "sha256": "30009c8aed9ba6071a557dc1aba8072722bd69cdaac439d39e2d02f02376fe5d"
+    },
+    "docs/architecture/0001-curated-babashka-runtime.md": {
+      "bytes": 1406,
+      "sha256": "e13b9e4003e3446b10212fde1df2e812f48cc5d2b54737ccca18adfff7b24fca"
+    },
+    "docs/architecture/0002-compiled-vs-authorized.md": {
+      "bytes": 1330,
+      "sha256": "308add0f39a94c24f0ec43f73564361cde22922ca5e303529b8c501607c73e40"
+    },
+    "docs/architecture/0003-dynamic-contexts.md": {
+      "bytes": 1341,
+      "sha256": "61ac512b6252e56799f150e3b65522e459ebc319a84072b783ff3f3107fcab96"
+    },
+    "docs/research/FUTURE_SEAMS.md": {
+      "bytes": 2287,
+      "sha256": "fd5317c9f125b68c8079c1ebf5975ffd05b546afdb392801ac202e62656c4133"
+    }
+  }
+}
