@@ -17,3 +17,5 @@ LICENSE
 README.md
 .cpcache/
 target/
+artifacts/bb0/
+.bb0-ci-artifacts/

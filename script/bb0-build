@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+UPSTREAM_REPOSITORY="https://github.com/babashka/babashka.git"
+UPSTREAM_TAG="v1.13.219"
+UPSTREAM_COMMIT="140ef9dcd770a54457a02fa29c3a2f643f4968d4"
+GRAALVM_VERSION="25.0.4"
+LEIN_VERSION="2.9.8"
+
+: "${GRAALVM_HOME:?Set GRAALVM_HOME to an Oracle GraalVM 25 installation}"
+: "${LEIN_HOME:?Set LEIN_HOME to a prepared Leiningen home; the scrubbed build must not fall back to ambient user state}"
+
+if [[ ! -x "$GRAALVM_HOME/bin/native-image" ]]; then
+    echo "native-image was not found under GRAALVM_HOME" >&2
+    exit 1
+fi
+
+LEIN_BIN=$(command -v lein) || {
+    echo "lein was not found on PATH" >&2
+    exit 1
+}
+
+NATIVE_IMAGE_VERSION_OUTPUT=$("$GRAALVM_HOME/bin/native-image" --version)
+read -r NATIVE_IMAGE_COMMAND NATIVE_IMAGE_ACTUAL_VERSION _ <<<"$NATIVE_IMAGE_VERSION_OUTPUT"
+if [[ "$NATIVE_IMAGE_COMMAND" != "native-image" || "$NATIVE_IMAGE_ACTUAL_VERSION" != "$GRAALVM_VERSION" ]]; then
+    echo "BB0 requires Oracle GraalVM native-image $GRAALVM_VERSION" >&2
+    exit 1
+fi
+
+LEIN_VERSION_OUTPUT=$("$LEIN_BIN" --version)
+read -r LEIN_COMMAND LEIN_ACTUAL_VERSION _ <<<"$LEIN_VERSION_OUTPUT"
+if [[ "$LEIN_COMMAND" != "Leiningen" || "$LEIN_ACTUAL_VERSION" != "$LEIN_VERSION" ]]; then
+    echo "BB0 requires Leiningen $LEIN_VERSION" >&2
+    exit 1
+fi
+
+ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+WORK_ROOT=${BB0_WORK_ROOT:-"${TMPDIR:-/tmp}/bb4t-bb0"}
+ARTIFACT_DIR="$ROOT_DIR/artifacts/bb0"
+
+mkdir -p "$WORK_ROOT" "$ARTIFACT_DIR"
+SOURCE_DIR=$(mktemp -d "$WORK_ROOT/source.XXXXXX")
+
+git clone --branch "$UPSTREAM_TAG" --depth 1 --recursive \
+    "$UPSTREAM_REPOSITORY" "$SOURCE_DIR"
+
+ACTUAL_COMMIT=$(git -C "$SOURCE_DIR" rev-parse HEAD)
+if [[ "$ACTUAL_COMMIT" != "$UPSTREAM_COMMIT" ]]; then
+    echo "Expected $UPSTREAM_COMMIT, resolved $ACTUAL_COMMIT" >&2
+    exit 1
+fi
+
+LEIN_BIN_DIR=$(dirname "$LEIN_BIN")
+BUILD_PATH="$GRAALVM_HOME/bin:$LEIN_BIN_DIR"
+if [[ "$LEIN_BIN_DIR" != "/usr/local/bin" ]]; then
+    BUILD_PATH="$BUILD_PATH:/usr/local/bin"
+fi
+BUILD_PATH="$BUILD_PATH:/usr/bin:/bin"
+BUILD_HOME="$SOURCE_DIR/.bb0-home"
+BUILD_TMPDIR=${TMPDIR:-"$BUILD_HOME/tmp"}
+mkdir -p "$BUILD_HOME" "$BUILD_TMPDIR"
+
+/usr/bin/time -v -o "$ARTIFACT_DIR/build-time.txt" \
+    env -i \
+    HOME="$BUILD_HOME" \
+    LANG=C.UTF-8 \
+    PATH="$BUILD_PATH" \
+    TMPDIR="$BUILD_TMPDIR" \
+    JAVA_HOME="$GRAALVM_HOME" \
+    GRAALVM_HOME="$GRAALVM_HOME" \
+    LEIN_HOME="$LEIN_HOME" \
+    LEIN_JVM_OPTS="-Duser.home=$BUILD_HOME" \
+    BABASHKA_SHA="$UPSTREAM_COMMIT" \
+    BABASHKA_XMX="${BABASHKA_XMX:--J-Xmx6500m}" \
+    /bin/bash -c 'cd "$1" && script/uberjar && script/compile' _ "$SOURCE_DIR" \
+    >"$ARTIFACT_DIR/build.log" 2>&1
+
+cp "$SOURCE_DIR/bb" "$ARTIFACT_DIR/bb"
+printf '%s\n' "$SOURCE_DIR" >"$ARTIFACT_DIR/source-path.txt"
+
+"$ARTIFACT_DIR/bb" version
+sha256sum "$ARTIFACT_DIR/bb"
