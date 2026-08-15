@@ -5,9 +5,11 @@
             [bb4t.events :as events]
             [bb4t.kernel :as kernel]
             [bb4t.operation :as operation]
-            [bb4t.runtime :as runtime]
-            [bb4t.value :as value]
-            [clojure.test :refer [deftest is testing]])
+             [bb4t.runtime :as runtime]
+             [bb4t.value :as value]
+             [clojure.java.io :as io]
+             [clojure.string :as str]
+             [clojure.test :refer [deftest is testing]])
   (:import [java.nio.file Files LinkOption OpenOption Path]
            [java.util UUID]))
 
@@ -43,7 +45,8 @@
                    [:runtime/manifest :upstream/commit])))
     (is (= "64163c4560e085ffdcf47951b406f62f753b7f4c"
            (get-in runtime-description [:runtime/manifest :sci/commit])))
-    (is (= "development"
+    (is (= (str/trim
+            (slurp (io/resource "META-INF/babashka/bb4t-commit")))
            (get-in runtime-description [:runtime/manifest :bb4t/commit])))
     (is (= :babashka/upstream-baseline
            (get-in runtime-description
@@ -165,8 +168,10 @@
                           #"not granted"
                           (operation/invoke minimal :project/read
                                             ["deps.edn"])))
-    (is (string? (invoked-data
-                  (operation/invoke project :project/read ["deps.edn"]))))
+    (let [description (operation/invoke project :project/read ["deps.edn"])]
+      (is (= :inert-data (:value/kind description)))
+      (is (= "java.lang.String" (:value/type description)))
+      (is (pos? (:value/encoded-characters description))))
     (is (thrown? clojure.lang.ExceptionInfo
                  (operation/invoke project :unknown/operation [])))
     (is (thrown? clojure.lang.ExceptionInfo
