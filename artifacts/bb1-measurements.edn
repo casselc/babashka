@@ -1,0 +1,85 @@
+{:schema/version 1
+
+ :source
+ {:branch :bb4t/bb1
+  :implementation-commit "734c7c9d0f205f3ecd50600f588eb93374b31671"
+  :tree "f3babf8c25efc4271b524666aec83bb99eea9b88"
+  :upstream-commit "140ef9dcd770a54457a02fa29c3a2f643f4968d4"
+  :sci-commit "64163c4560e085ffdcf47951b406f62f753b7f4c"}
+
+ :toolchain
+ {:container "ubuntu:26.04@sha256:678c6550cc43645e08669028bc177f50be4e7c5b8cca677067b1914d4afc7a03"
+  :graalvm "Oracle GraalVM 25.0.4+7.1"
+  :leiningen "2.9.8"}
+
+ :build
+ {:command ["docker" "build" "--file" "Dockerfile.bb1" "--target" "ci"
+            "--build-arg"
+            "BB1_COMMIT=734c7c9d0f205f3ecd50600f588eb93374b31671"
+            "--tag" "bb4t-bb1-ci" "."]
+  :measured-steps ["script/uberjar" "script/compile"]
+  :wall-ms 89860
+  :peak-rss-bytes 4740517888
+  :result :pass
+  :bb0-recorded-wall-ms 72140
+  :wall-delta-ms 17720
+  :wall-delta-percent 24.56334904352648
+  :comparison-note "BB0 was measured on the host and BB1 in the pinned container; treat the delta as directional."}
+
+ :binary
+ {:bytes 88148224
+  :sha256 "f37741f4898b6d340453c3c0df851f327ef26245ed4ad6398d9d6423aa3e0a54"
+  :format "ELF 64-bit LSB PIE, x86-64, dynamically linked, stripped"
+  :dynamic-libraries ["libz.so.1" "libc.so.6"]
+  :bb0-recorded-bytes 87296256
+  :byte-delta 851968
+  :byte-delta-percent 0.9759502171547884}
+
+ :context-construction-native
+ {:clock :system/nano-time
+  :warmup-per-profile 5
+  :agent/minimal
+  {:samples 30 :min-ns 137719 :median-ns 141367 :p95-ns 144673 :max-ns 144903}
+  :transform/pure
+  {:samples 30 :min-ns 159803 :median-ns 164852 :p95-ns 181354 :max-ns 224359}
+  :agent/project-read
+  {:samples 30 :min-ns 208738 :median-ns 217525 :p95-ns 405564 :max-ns 707203}}
+
+ :catalog
+ {:capability-count 3
+  :semantic-operation-count 3
+  :profile-count 3
+  :coordinate "sha256:41fb72e52a1082c26693349d610b5b8f8ae55e8441426662330d49c24ea9266b"}
+
+ :surface
+ {:agent/minimal
+  {:allow-symbol-count 29 :deny-symbol-count 20
+   :projected-namespace-count 0 :projected-var-count 0 :projected-class-count 0}
+  :transform/pure
+  {:allow-symbol-count 31 :deny-symbol-count 20
+   :projected-namespace-count 1 :projected-var-count 2 :projected-class-count 0}
+  :agent/project-read
+  {:allow-symbol-count 32 :deny-symbol-count 20
+   :projected-namespace-count 2 :projected-var-count 3 :projected-class-count 0}
+  :closed-sci-default-class-count 18}
+
+ :tests
+ {:authority-cells 51
+  :authority-allow-cells 12
+  :authority-deny-cells 39
+  :packaged-assurance-checks 19
+  :jvm-native-parity :equal
+  :focused-jvm {:tests 15 :assertions 82 :failures 0 :errors 0}
+  :native-main {:tests 362 :assertions 1062 :failures 0 :errors 0}
+  :native-flaky {:tests 15 :assertions 23 :failures 0 :errors 0}
+  :native-additional-phases
+  [{:name :preloads :tests 1 :assertions 1 :failures 0 :errors 0}
+   {:name :preloads-file-location :tests 1 :assertions 1 :failures 0 :errors 0}
+   {:name :classpath-environment :tests 1 :assertions 1 :failures 0 :errors 0}
+   {:name :pod :tests 1 :assertions 2 :failures 0 :errors 0}
+   {:name :socket-repl :tests 3 :assertions 18 :failures 0 :errors 0}]}
+
+ :upstream-diff
+ {:from-product-dev {:files 19 :insertions 1902 :deletions 3 :commits 2}
+  :from-bb0-tag {:files 24 :insertions 2100 :deletions 76 :commits 3}
+  :from-upstream-release {:files 41 :insertions 3815 :deletions 3}}}

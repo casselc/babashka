@@ -1,8 +1,8 @@
-{:bb4t/manifest-version 1
+{:bb4t/manifest-version 2
 
  :runtime
  {:id :bb4t
-  :profile :upstream-baseline}
+  :profile :bb1}
 
  :upstream
   {:repository "https://github.com/babashka/babashka"
@@ -22,8 +22,18 @@
  :features
  {:mode :upstream-baseline}
 
- :libraries {}
+ :libraries
+ {:cheshire {:availability :compiled
+             :use :bounded-json-capability}}
 
- :capabilities {}
+ :capabilities
+ {:catalog/ns bb4t.catalog
+  :compiled #{:data/json-read :data/json-write :project/read}
+  :profiles #{:agent/minimal :transform/pure :agent/project-read}}
 
- :surfaces #{}}
+ :surfaces #{:internal/bb1-evidence}
+
+ :evidence
+ {:implementation-commit "734c7c9d0f205f3ecd50600f588eb93374b31671"
+  :runtime-coordinate "sha256:0145fe19a83cff57f67b5c1883454b217f824e525bd925db2bbc1a666e1f34c1"
+  :catalog-coordinate "sha256:41fb72e52a1082c26693349d610b5b8f8ae55e8441426662330d49c24ea9266b"}}

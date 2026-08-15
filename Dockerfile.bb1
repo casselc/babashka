@@ -98,14 +98,7 @@ RUN read -r SOURCE_DIR < artifacts/bb1/source-path.txt \
 
 RUN read -r SOURCE_DIR < artifacts/bb1/source-path.txt \
     && "$SOURCE_DIR/bb" -e \
-       '(require (quote [clojure.edn :as edn]))
-        (let [[jvm-path native-path] *command-line-args*
-              jvm (edn/read-string (slurp jvm-path))
-              native (edn/read-string (slurp native-path))]
-          (assert (:pass? jvm))
-          (assert (:pass? native))
-          (assert (= (:parity jvm) (:parity native)))
-          (println :bb1-parity-ok))' \
+       '(require (quote [clojure.edn :as edn])) (let [[jvm-path native-path] *command-line-args* jvm (edn/read-string (slurp jvm-path)) native (edn/read-string (slurp native-path))] (assert (:pass? jvm)) (assert (:pass? native)) (assert (= (:parity jvm) (:parity native))) (println :bb1-parity-ok))' \
        artifacts/bb1/corpus-jvm.edn artifacts/bb1/corpus-native.edn
 
 RUN read -r SOURCE_DIR < artifacts/bb1/source-path.txt \
@@ -120,7 +113,7 @@ RUN read -r SOURCE_DIR < artifacts/bb1/source-path.txt \
        LEIN_HOME="$LEIN_HOME" \
        LEIN_JVM_OPTS="-Duser.home=$SOURCE_DIR/.bb1-home" \
        BABASHKA_TEST_ENV=jvm \
-       /bin/bash -c 'cd "$1" && script/test' _ "$SOURCE_DIR" \
+       /bin/bash -c 'cd "$1" && lein test bb4t.canonical-test bb4t.kernel-test bb4t.bb1-corpus-test' _ "$SOURCE_DIR" \
        > /workspace/artifacts/bb1/jvm-test.log 2>&1 \
     || { tail -n 200 /workspace/artifacts/bb1/jvm-test.log; exit 1; }
 
