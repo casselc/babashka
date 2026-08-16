@@ -25,11 +25,14 @@
 (def ^:private sci-commit
   "64163c4560e085ffdcf47951b406f62f753b7f4c")
 
+(def ^:private build-commit-resource
+  (some-> (io/resource "META-INF/babashka/bb4t-commit")
+          slurp
+          str/trim
+          not-empty))
+
 (defn- build-commit []
-  (or (some-> (io/resource "META-INF/babashka/bb4t-commit")
-              slurp
-              str/trim
-              not-empty)
+  (or build-commit-resource
       (throw (ex-info "BB1 build provenance resource is missing" {}))))
 
 (def ^:private default-event-limit 256)
