@@ -124,6 +124,10 @@
                                   "-Dborkdude.dynaload.aot=true"]
                        :main babashka.main
                        :aot [babashka.main]}
+             :app/bbagent {:source-paths ["../bbagent/src"]
+                           :resource-paths ["../bbagent/resources"]
+                           :main bbagent.core
+                           :aot [bbagent.core]}
              :reflection {:main babashka.impl.classes/generate-reflection-file}}
   :aliases {"bb" ["with-profile" "test"  "run" "-m" "babashka.main"]}
   :deploy-repositories [["clojars" {:url "https://clojars.org/repo"

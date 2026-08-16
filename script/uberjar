@@ -28,6 +28,15 @@ fi
 
 BABASHKA_LEIN_PROFILES="+uberjar"
 
+if [ "${BB4T_APPLICATION:-}" = "bbagent" ]
+then
+    BABASHKA_LEIN_PROFILES+=",+app/bbagent"
+elif [ -n "${BB4T_APPLICATION:-}" ]
+then
+    echo "Unknown BB4T_APPLICATION: $BB4T_APPLICATION" >&2
+    exit 1
+fi
+
 if [ "$BABASHKA_FEATURE_JDBC" = "true" ]
 then
     BABASHKA_LEIN_PROFILES+=",+feature/jdbc"
