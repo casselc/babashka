@@ -12,6 +12,6 @@
   (kernel/event-snapshot runtime))
 
 (defn context-snapshot
-  "Returns events associated with one live Context instance."
+  "Returns currently retained events for one live Context instance."
   [context]
   (kernel/context-event-snapshot context))

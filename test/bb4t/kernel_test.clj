@@ -2,11 +2,12 @@
   (:require [bb4t.canonical :as canonical]
             [bb4t.catalog :as catalog]
             [bb4t.context :as context]
-             [bb4t.events :as events]
-             [bb4t.kernel :as kernel]
+            [bb4t.events :as events]
+            [bb4t.kernel :as kernel]
             [bb4t.operation :as operation]
             [bb4t.runtime :as runtime]
             [bb4t.value :as value]
+            [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]])
   (:import [java.nio.file Files LinkOption OpenOption Path]
            [java.util UUID]))
@@ -84,6 +85,12 @@
                   duplicate
                   #{:bb4t.data/json-read :bb4t.data/json-write
                     :bb4t.project/read :bb4t.duplicate/read})))))
+
+(deftest missing-build-provenance-fails-on-runtime-use-test
+  (with-redefs [io/resource (constantly nil)]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                          #"build provenance resource is missing"
+                          (runtime/create {})))))
 
 (deftest profile-attenuation-and-coordinate-test
   (let [runtime (test-runtime)
@@ -230,6 +237,10 @@
     (is (thrown? clojure.lang.ExceptionInfo
                  (operation/invoke pure :data.json/write [{:keyword 1}])))
     (is (thrown? clojure.lang.ExceptionInfo
+                 (operation/invoke pure :data.json/read ["{\"x\":1.5}"])))
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (operation/invoke pure :data.json/write [1.5])))
+    (is (thrown? clojure.lang.ExceptionInfo
                  (operation/invoke pure :data.json/write [Double/NaN])))))
 
 (deftest project-read-containment-and-bounds-test
@@ -327,8 +338,10 @@
     (context/evaluate context "(data.json/read \"{}\")")
     (unsubscribe)
     (context/evaluate context "(+ 2 3)")
-    (let [{:keys [events events/dropped]} (events/snapshot runtime)]
+    (let [{:keys [events events/dropped]} (events/snapshot runtime)
+          context-events (events/context-snapshot context)]
       (is (= 4 (count events)))
+      (is (= "clojure.lang.PersistentVector" (.getName (class events))))
       (is (pos? dropped))
       (is (= 4 (count @received)))
       (is (every? #(every? (set (keys %))
@@ -336,9 +349,10 @@
                             :runtime/coordinate :timestamp :data])
                   events))
       (is (every? #(not-any? (set (keys (:data %))) [:args :result]) events))
+      (is (not (contains? context-events :events/dropped)))
       (is (every? #(= (:context/instance-id (context/describe context))
                       (:context/instance-id %))
-                   (:events (events/context-snapshot context)))))))
+                   (:events context-events))))))
 
 (deftest concurrent-events-have-exact-drop-count-test
   (let [runtime (test-runtime {:event-limit 8})

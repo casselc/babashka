@@ -25,7 +25,7 @@
 (def ^:private sci-commit
   "64163c4560e085ffdcf47951b406f62f753b7f4c")
 
-(def ^:private build-commit
+(defn- build-commit []
   (or (some-> (io/resource "META-INF/babashka/bb4t-commit")
               slurp
               str/trim
@@ -156,9 +156,6 @@
               (cond
                 (or (nil? value) (boolean? value) (string? value)) nil
                 (integer? value) nil
-                (and (number? value)
-                     (not (ratio? value))
-                     (Double/isFinite (double value))) nil
                 (vector? value) (doseq [item value] (walk item (inc depth)))
                 (and (map? value) (not (record? value)))
                 (doseq [[key item] value]
@@ -319,7 +316,7 @@
                        excess (max 0 (- (count next-events)
                                         (:event-limit runtime)))]
                    {:events (if (pos? excess)
-                              (subvec next-events excess)
+                              (into [] (subvec next-events excess))
                               next-events)
                     :dropped (+ dropped excess)
                     :next-seq (:event/seq event)})))
@@ -365,7 +362,7 @@
                  resources)
            manifest {:manifest/version 1
                      :manifest/type :bb4t/runtime-manifest
-                     :bb4t/commit build-commit
+                     :bb4t/commit (build-commit)
                      :upstream/commit upstream-commit
                      :sci/commit sci-commit
                      :compiled/universe
@@ -698,10 +695,9 @@
 
 (defn context-event-snapshot [context]
   (let [context (resolve-handle context-handles :context context)
-        {:keys [events dropped]} @(:event-state (:runtime context))]
+        {:keys [events]} @(:event-state (:runtime context))]
     {:events (filterv #(= (:instance-id context) (:context/instance-id %))
-                      events)
-     :events/dropped dropped}))
+                       events)}))
 
 (defn subscribe [runtime subscriber]
   (let [runtime (resolve-handle runtime-handles :runtime runtime)]

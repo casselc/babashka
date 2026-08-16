@@ -3,7 +3,7 @@
 (def ^:private json-read
   {:capability/id :data/json-read
    :effects #{}
-   :doc "Parse a bounded JSON string into inert Clojure data."
+   :doc "Parse bounded integer-only JSON into inert Clojure data."
    :implementation/id :bb4t.data/json-read
    :operation
    {:operation/id :data.json/read
@@ -11,13 +11,13 @@
     :output/schema :json/value
     :sci/namespace 'data.json
     :sci/var 'read
-    :doc "Parse a bounded JSON string into Clojure data."
+    :doc "Parse bounded integer-only JSON into Clojure data."
     :arglists (list ['json-string])}})
 
 (def ^:private json-write
   {:capability/id :data/json-write
    :effects #{}
-   :doc "Encode bounded inert Clojure data as JSON."
+   :doc "Encode bounded inert Clojure data as integer-only JSON."
    :implementation/id :bb4t.data/json-write
    :operation
    {:operation/id :data.json/write
@@ -25,7 +25,7 @@
     :output/schema :string
     :sci/namespace 'data.json
     :sci/var 'write
-    :doc "Encode bounded Clojure data as a JSON string."
+    :doc "Encode bounded Clojure data as an integer-only JSON string."
     :arglists (list ['value])}})
 
 (def ^:private project-read

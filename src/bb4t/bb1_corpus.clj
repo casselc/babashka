@@ -417,6 +417,12 @@
         :json/trailing-input-denied?
         (any-failure?
          #(operation/invoke pure :data.json/read ["{} trailing"]))
+        :json/fractional-read-denied?
+        (validation-failure?
+         #(operation/invoke pure :data.json/read ["{\"value\":1.5}"]))
+        :json/fractional-write-denied?
+        (validation-failure?
+         #(operation/invoke pure :data.json/write [1.5]))
         :json/lazy-value-denied?
         (validation-failure?
          #(operation/invoke pure :data.json/write [(map identity [1 2])]))
@@ -455,8 +461,13 @@
                                      "(reduce vector nil (range 65))")
                    [:value :value/kind]))
         :events/bounded? (and (= 3 (count events)) (pos? dropped))
+        :events/storage-compacted?
+        (= "clojure.lang.PersistentVector" (some-> events class .getName))
         :events/dropped-exact?
         (= dropped (- (:event/seq (peek events)) (count events)))
+        :events/context-drop-not-misreported?
+        (not (contains? (events/context-snapshot event-context)
+                        :events/dropped))
         :events/structured?
         (every? #(and (integer? (:event/seq %))
                       (keyword? (:event/type %))
