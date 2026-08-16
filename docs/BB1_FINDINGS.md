@@ -1,6 +1,6 @@
 # BB1 Findings
 
-**Implementation coordinate:** `19512480f21bd9095d693dcd395f050f18c2d914`
+**Implementation coordinate:** `cedbcb9adcde61533cd023b71c14dc4b7c109cc3`
 **Result:** Pass, independent fresh review accepted
 **Scope:** semantic capability restriction inside one pinned bb4t runtime
 
@@ -137,7 +137,7 @@ as an implementation API.
 ## Deterministic Coordinates
 
 ```text
-runtime  sha256:659a5f3f3bb0e68b4707cb7810d7652e64af78594b77f54fef62e7c36bdb5972
+runtime  sha256:b94f490e4caacb5ad2ec293759084678d8f7615665f4499b38f5149b64ae014e
 catalog  sha256:f132b513c4492e9cc9e22af088182d03d28b2059eab5c182dcbdf1db6e425f31
 vector   sha256:2c1e6b7c6f844c15a7f6a67b0828b0fdc6d38c4fe6d436275bc802471c776d48
 ```
@@ -167,13 +167,13 @@ payloads.
 Focused JVM tests:
 
 ```text
-17 tests, 163 assertions, 0 failures, 0 errors
+18 tests, 164 assertions, 0 failures, 0 errors
 ```
 
 Full native upstream plus BB1 main phase:
 
 ```text
-364 tests, 1143 assertions, 0 failures, 0 errors
+365 tests, 1144 assertions, 0 failures, 0 errors
 ```
 
 The remaining native phases also passed: flaky 15/23, preloads 1/1, preload
@@ -191,11 +191,11 @@ Against the recorded BB0 baseline:
 BB0 binary             87,296,256 bytes
 BB1 binary             88,213,760 bytes
 delta                     917,504 bytes (+1.051%)
-BB1 SHA-256             f5bbc65bfd01a3f9d50e66ec5fa91f0ec25f659100e26ebbf74b3630af764971
+BB1 SHA-256             79a2a4ccb808d7c75af2f1e591cf4c46fbcd49cdfcb2ae411c150a367467aa31
 
 BB0 build wall             72.140 s
-BB1 build wall             79.950 s
-delta                       7.810 s (+10.83%)
+BB1 build wall             83.470 s
+delta                      11.330 s (+15.71%)
 ```
 
 The BB0 timing was measured on the host while BB1 used the pinned container, so the
@@ -205,9 +205,9 @@ Native context construction after five warmups, 30 samples per profile:
 
 ```text
 profile                 median       p95
-agent/minimal           0.182 ms    0.193 ms
-transform/pure          0.209 ms    0.496 ms
-agent/project-read      0.270 ms    0.277 ms
+agent/minimal           0.258 ms    0.557 ms
+transform/pure          0.306 ms    0.339 ms
+agent/project-read      0.373 ms    0.540 ms
 ```
 
 The catalog has 3 capabilities and 3 operations. Capability projections contain
@@ -215,10 +215,10 @@ The catalog has 3 capabilities and 3 operations. Capability projections contain
 the base `user` namespace with `apropos` and `doc`, total projected surface counts
 are 1/2, 2/4, and 3/5. No Java class is projected.
 
-From `bb4t/dev`, the measured BB1 coordinate changes 24 files with 2,771 insertions
-and 9 deletions across eighteen commits. From the immutable BB0 tag, product-roadmap
-and BB1 work together change 29 files with 2,969 insertions and 82 deletions across
-nineteen commits.
+From `bb4t/dev`, the measured BB1 coordinate changes 24 files with 2,810 insertions
+and 9 deletions across twenty commits. From the immutable BB0 tag, product-roadmap
+and BB1 work together change 29 files with 3,008 insertions and 82 deletions across
+twenty-one commits.
 
 Machine-readable values are in `artifacts/bb1-measurements.edn` and
 `artifacts/bb1-authority.edn`. Raw logs, corpora, measurements, and the binary remain
@@ -242,6 +242,10 @@ and context snapshots reported a runtime-global drop count. The final measured
 implementation compacts retained events, defers missing-provenance failure to BB1
 runtime creation, rejects fractional JSON on both read and write, and omits the
 misleading context drop field.
+
+The follow-up re-review returned `LGTM`; its remaining provenance-branch coverage gap
+is covered by the final measured implementation, which also reports fractional-number
+validation explicitly.
 
 ## Security And Isolation Limits
 
@@ -280,7 +284,7 @@ complete security sandbox.
 4. **Canonical manifests free of live objects?** Yes, enforced by rejection tests.
 5. **Deterministic coordinates?** Yes for the defined canonical domain and vectors.
 6. **Native matches JVM?** Yes for the normalized 96-cell corpus and 40 checks.
-7. **Fork divergence?** 24 files, +2,771/-9 from `bb4t/dev` at the evidence commit.
+7. **Fork divergence?** 24 files, +2,810/-9 from `bb4t/dev` at the evidence commit.
 8. **Claims not established?** OS/hostile-code isolation and the limits above.
 9. **Clean external-client seam?** Yes; fresh reviews accepted the façades, which
    return bounded descriptions/data and do not expose mutable evaluator objects.

@@ -1,20 +1,20 @@
 {:schema/version 1
- :implementation-commit "19512480f21bd9095d693dcd395f050f18c2d914"
+ :implementation-commit "cedbcb9adcde61533cd023b71c14dc4b7c109cc3"
 
  :coordinates
- {:runtime "sha256:659a5f3f3bb0e68b4707cb7810d7652e64af78594b77f54fef62e7c36bdb5972"
+ {:runtime "sha256:b94f490e4caacb5ad2ec293759084678d8f7615665f4499b38f5149b64ae014e"
   :catalog "sha256:f132b513c4492e9cc9e22af088182d03d28b2059eab5c182dcbdf1db6e425f31"
   :canonical-test-vector "sha256:2c1e6b7c6f844c15a7f6a67b0828b0fdc6d38c4fe6d436275bc802471c776d48"
   :contexts
   {:agent/minimal
    {:context-spec "sha256:32906066a32169f44ca1c1c25581e8eec74a60b6bddb565b21bf14c3b5dc79bc"
-    :effective "sha256:c23fda207552a10390bdea44444f3f7608e4416fd46b530b30ea0a6474fa98d3"}
+    :effective "sha256:3e2963601487d047bc6c7edbf64b8fc652f7725b72c05a0740800579ca3e043c"}
    :transform/pure
    {:context-spec "sha256:80794cbe814770e19d369ff9e2d9d2fb609ed2ca0fd091c803b316767edea86e"
-    :effective "sha256:4b2867cf1b3c1bba176d9a1a84a879f001a0a0245a5d6f33f0a2ad98a59bfe36"}
+    :effective "sha256:c6aca5fe525b605ea883d21de03f438913089cf86fed57c38d868e3f96b93aad"}
    :agent/project-read
    {:context-spec "sha256:56afcaaf18ea2ef16dbdf684bced9f45be2e93dc4a30e774ddab2f6f01297937"
-    :effective "sha256:f61eb5960ccf6d5020ecb450f765a9e3e92a2e982a52c7a977268375222677b6"
+    :effective "sha256:e333075ae67415f53547e197b477e49081ae7c3b058e16b65ce518088233af74"
     :note "Effective coordinate includes the real authorized project-root path used by this build."}}}
 
  :authority
@@ -77,10 +77,10 @@
   :doc-project-read true}
 
  :raw-local-evidence
- {:corpus-jvm-sha256 "f79eecca01c9880b57cd3b816f9ff9ec54c9804c7a09b2b8470ef0c2b3681b56"
-  :corpus-native-sha256 "b797264aeb1412427b3924f0294b21c1d849e71fd36766845fbac7fbf8b4916d"
-  :context-latency-native-sha256 "f14ace59cb47d51d4fcdd4f0585c261637692c0235da2e92b2a61b7a3e2d45a0"
-  :build-log-sha256 "89e46e89b919d6950092633095e9a5af7b57c4f0b3f967c06659286b20728399"
-  :jvm-test-log-sha256 "7d33a629ddd56c0742ea76f371b16c74c599fbf78ee78b1171536eee7a29b3ee"
-  :native-test-log-sha256 "c4877ffcbfe447470b3a55a93db704baba32421fc7fff81da1e6cf8d6bfdb97f"
+ {:corpus-jvm-sha256 "044bf3040c54f8b630862e59c0d04baadc52cd82f0e529147ff56da0a1b09466"
+  :corpus-native-sha256 "8d407f10993dbe6873f33a8ceac43451bb67e272f0e42708950e7b61ccb65953"
+  :context-latency-native-sha256 "275bdedde88ee282a38bfe48917081a659c78c382be249d50996992cd824ee45"
+  :build-log-sha256 "3f7d8a521245a43ef49785b62a2cc6157b1d24390b9b7b3bbc674d44bf6d87a6"
+  :jvm-test-log-sha256 "57d953813315a28da749e99fd1129d76072817760edecda13845b610ea3db620"
+  :native-test-log-sha256 "5d4adfc09fa3a8ec8148889fc909a965e1ef8e23f169fd69d822c1a976eb6997"
   :note "Raw corpus files contain ephemeral context instance IDs and remain ignored local artifacts."}}
