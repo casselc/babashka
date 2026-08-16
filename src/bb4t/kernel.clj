@@ -60,8 +60,11 @@
     handle))
 
 (defn- resolve-handle [^Map registry kind handle]
-  (or (.get registry handle)
-      (fail! "Unknown or expired bb4t handle" {:handle/kind kind})))
+  (locking registry
+    (or (some (fn [[registered state]]
+                (when (identical? registered handle) state))
+              registry)
+        (fail! "Unknown or expired bb4t handle" {:handle/kind kind}))))
 
 (defn- exact-keys! [kind value allowed]
   (when-not (map? value)

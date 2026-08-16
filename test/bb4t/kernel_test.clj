@@ -28,6 +28,12 @@
 (defn invoked-data [description]
   (:value/data description))
 
+(defn equality-forge [target]
+  (let [target-hash (.hashCode ^Object target)]
+    (reify Object
+      (hashCode [_] target-hash)
+      (equals [_ _] true))))
+
 (deftest manifest-and-catalog-are-inert-test
   (let [runtime (test-runtime)
         runtime-description (runtime/describe runtime)
@@ -162,9 +168,11 @@
     (is (thrown? clojure.lang.ExceptionInfo
                  (runtime/create {:resources {:attacker/root project-root}})))
     (is (thrown? clojure.lang.ExceptionInfo
-                 (runtime/describe (Object.))))
+                 (runtime/describe (equality-forge runtime))))
     (is (thrown? clojure.lang.ExceptionInfo
-                 (context/describe (Object.))))))
+                 (context/describe
+                  (equality-forge
+                   (context/create runtime {:profile :agent/minimal})))))))
 
 (deftest operation-dispatch-rechecks-grants-test
   (let [runtime (test-runtime)

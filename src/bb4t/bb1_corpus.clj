@@ -191,6 +191,12 @@
     false
     (catch Throwable _ true)))
 
+(defn- equality-forge [target]
+  (let [target-hash (.hashCode ^Object target)]
+    (reify Object
+      (hashCode [_] target-hash)
+      (equals [_ _] true))))
+
 (defn- delete-if-present! [path]
   (when path
     (Files/deleteIfExists path)))
@@ -295,9 +301,9 @@
         (and (not (associative? minimal))
              (= :opaque (:value/kind (value/describe minimal))))
         :handle/forged-runtime-denied?
-        (validation-failure? #(runtime/describe (Object.)))
+        (validation-failure? #(runtime/describe (equality-forge runtime)))
         :handle/forged-context-denied?
-        (validation-failure? #(context/describe (Object.)))
+        (validation-failure? #(context/describe (equality-forge minimal)))
         :runtime/authority-policy-recorded?
         (let [base (get-in (runtime/describe runtime)
                            [:runtime/manifest :sci/base])]
