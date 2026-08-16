@@ -2,8 +2,8 @@
 
  :source
  {:branch :bb4t/bb1
-  :implementation-commit "7ac2564fc94304c44189068a3f95ae9693d3feae"
-  :tree "a77fc960c67fd896c4cf0e6f3453ca656d0c6ae3"
+  :implementation-commit "b9420f0a347dc64b0a10b880fbc9914f6de537a9"
+  :tree "ede31004d5313c8537fa630d80e9949bfcf63a26"
   :upstream-commit "140ef9dcd770a54457a02fa29c3a2f643f4968d4"
   :sci-commit "64163c4560e085ffdcf47951b406f62f753b7f4c"}
 
@@ -15,7 +15,7 @@
  :build
  {:command ["docker" "build" "--platform" "linux/amd64"
             "--build-arg"
-            "BB1_COMMIT=7ac2564fc94304c44189068a3f95ae9693d3feae"
+            "BB1_COMMIT=b9420f0a347dc64b0a10b880fbc9914f6de537a9"
             "--target" "artifacts" "--output"
             "type=local,dest=.bb1-ci-artifacts"
             "-f" "Dockerfile.bb1" "."]
@@ -24,17 +24,17 @@
                  :blob-filter :blob/none
                  :submodules :shallow-pinned}
   :measured-steps ["script/uberjar" "script/compile"]
-  :wall-ms 81020
-  :peak-rss-bytes 4651900928
+  :wall-ms 82540
+  :peak-rss-bytes 4825317376
   :result :pass
   :bb0-recorded-wall-ms 72140
-  :wall-delta-ms 8880
-  :wall-delta-percent 12.309398392015531
+  :wall-delta-ms 10400
+  :wall-delta-percent 14.416412531189348
   :comparison-note "BB0 was measured on the host and BB1 in the pinned container; treat the delta as directional."}
 
  :binary
  {:bytes 88148224
-  :sha256 "1f1ec02d919942e97cf5382efee3520c7f979629a0a0257dbb66deee5295f2f6"
+  :sha256 "61a10a558384c35e54a2b6bf3228d487ca5e02c9c7ea2fa0e6539ef181a841b4"
   :format "ELF 64-bit LSB PIE, x86-64, dynamically linked, stripped"
   :dynamic-libraries ["libz.so.1" "libc.so.6"]
   :bb0-recorded-bytes 87296256
@@ -45,11 +45,11 @@
  {:clock :system/nano-time
   :warmup-per-profile 5
   :agent/minimal
-  {:samples 30 :min-ns 142038 :median-ns 146777 :p95-ns 209540 :max-ns 377339}
+  {:samples 30 :min-ns 139013 :median-ns 143532 :p95-ns 219269 :max-ns 261763}
   :transform/pure
-  {:samples 30 :min-ns 165995 :median-ns 170314 :p95-ns 194611 :max-ns 196395}
+  {:samples 30 :min-ns 162779 :median-ns 168300 :p95-ns 213378 :max-ns 259799}
   :agent/project-read
-  {:samples 30 :min-ns 209601 :median-ns 222617 :p95-ns 354524 :max-ns 368121}}
+  {:samples 30 :min-ns 202627 :median-ns 212496 :p95-ns 273776 :max-ns 279578}}
 
  :catalog
  {:capability-count 3
@@ -92,6 +92,6 @@
    {:name :socket-repl :tests 3 :assertions 18 :failures 0 :errors 0}]}
 
  :upstream-diff
- {:from-product-dev {:files 24 :insertions 2424 :deletions 9 :commits 9}
-  :from-bb0-tag {:files 29 :insertions 2622 :deletions 82 :commits 10}
-  :from-upstream-release {:files 45 :insertions 4331 :deletions 3 :commits 14}}}
+ {:from-product-dev {:files 24 :insertions 2494 :deletions 9 :commits 11}
+  :from-bb0-tag {:files 29 :insertions 2692 :deletions 82 :commits 12}
+  :from-upstream-release {:files 45 :insertions 4401 :deletions 3 :commits 16}}}

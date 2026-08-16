@@ -1,6 +1,6 @@
 # BB1 Findings
 
-**Implementation coordinate:** `7ac2564fc94304c44189068a3f95ae9693d3feae`
+**Implementation coordinate:** `b9420f0a347dc64b0a10b880fbc9914f6de537a9`
 **Result:** Pass, proceed to fresh BB1 review
 **Scope:** semantic capability restriction inside one pinned bb4t runtime
 
@@ -43,7 +43,9 @@ The live side is separate:
   atoms, and subscribers;
 - private `ContextState` owns the SCI context, evaluation lock, and instance identity;
 - clients receive identity-only runtime/context handles backed by private weak
-  registries, so record fields and the SCI evaluator are not map-accessible;
+  registries; locked lookup compares keys by object identity rather than
+  caller-controlled equality, so record fields and the SCI evaluator are not
+  map-accessible;
 - bounded SCI Vars capture a context and call the same checked semantic dispatcher
   as trusted host clients;
 - no live object is accepted by canonicalization or returned as an evaluated or
@@ -109,7 +111,7 @@ as an implementation API.
 ## Deterministic Coordinates
 
 ```text
-runtime  sha256:56d927496acb7e5e84416623cf327bd7eaf1e7ff5212ec13b327d5144c07fbc3
+runtime  sha256:f52a3a6de14a47189df11eb8a4bfbefd9d10a21ac05be8cce2d9f0e920d31c1e
 catalog  sha256:41fb72e52a1082c26693349d610b5b8f8ae55e8441426662330d49c24ea9266b
 vector   sha256:2c1e6b7c6f844c15a7f6a67b0828b0fdc6d38c4fe6d436275bc802471c776d48
 ```
@@ -161,11 +163,11 @@ Against the recorded BB0 baseline:
 BB0 binary             87,296,256 bytes
 BB1 binary             88,148,224 bytes
 delta                     851,968 bytes (+0.976%)
-BB1 SHA-256             1f1ec02d919942e97cf5382efee3520c7f979629a0a0257dbb66deee5295f2f6
+BB1 SHA-256             61a10a558384c35e54a2b6bf3228d487ca5e02c9c7ea2fa0e6539ef181a841b4
 
 BB0 build wall             72.140 s
-BB1 build wall             81.020 s
-delta                       8.880 s (+12.31%)
+BB1 build wall             82.540 s
+delta                      10.400 s (+14.42%)
 ```
 
 The BB0 timing was measured on the host while BB1 used the pinned container, so the
@@ -175,9 +177,9 @@ Native context construction after five warmups, 30 samples per profile:
 
 ```text
 profile                 median       p95
-agent/minimal           0.147 ms    0.210 ms
-transform/pure          0.170 ms    0.195 ms
-agent/project-read      0.223 ms    0.355 ms
+agent/minimal           0.144 ms    0.219 ms
+transform/pure          0.168 ms    0.213 ms
+agent/project-read      0.212 ms    0.274 ms
 ```
 
 The catalog has 3 capabilities and 3 operations. Capability projections contain
@@ -185,10 +187,10 @@ The catalog has 3 capabilities and 3 operations. Capability projections contain
 the base `user` namespace with `apropos` and `doc`, total projected surface counts
 are 1/2, 2/4, and 3/5. No Java class is projected.
 
-From `bb4t/dev`, the measured BB1 coordinate changes 24 files with 2,424 insertions
-and 9 deletions across nine commits. From the immutable BB0 tag, product-roadmap and
-BB1 work together change 29 files with 2,622 insertions and 82 deletions across ten
-commits.
+From `bb4t/dev`, the measured BB1 coordinate changes 24 files with 2,494 insertions
+and 9 deletions across eleven commits. From the immutable BB0 tag, product-roadmap
+and BB1 work together change 29 files with 2,692 insertions and 82 deletions across
+twelve commits.
 
 Machine-readable values are in `artifacts/bb1-measurements.edn` and
 `artifacts/bb1-authority.edn`. Raw logs, corpora, measurements, and the binary remain
@@ -225,7 +227,7 @@ complete security sandbox.
 4. **Canonical manifests free of live objects?** Yes, enforced by rejection tests.
 5. **Deterministic coordinates?** Yes for the defined canonical domain and vectors.
 6. **Native matches JVM?** Yes for the normalized 51-cell corpus and 32 checks.
-7. **Fork divergence?** 24 files, +2,424/-9 from `bb4t/dev` at the evidence commit.
+7. **Fork divergence?** 24 files, +2,494/-9 from `bb4t/dev` at the evidence commit.
 8. **Claims not established?** OS/hostile-code isolation and the limits above.
 9. **Clean external-client seam?** Yes, subject to fresh review; façades return
    bounded descriptions/data and do not expose mutable evaluator objects.

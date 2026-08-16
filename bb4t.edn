@@ -41,6 +41,6 @@
  :surfaces #{:internal/bb1-evidence}
 
  :evidence
- {:implementation-commit "7ac2564fc94304c44189068a3f95ae9693d3feae"
-  :runtime-coordinate "sha256:56d927496acb7e5e84416623cf327bd7eaf1e7ff5212ec13b327d5144c07fbc3"
+ {:implementation-commit "b9420f0a347dc64b0a10b880fbc9914f6de537a9"
+  :runtime-coordinate "sha256:f52a3a6de14a47189df11eb8a4bfbefd9d10a21ac05be8cce2d9f0e920d31c1e"
   :catalog-coordinate "sha256:41fb72e52a1082c26693349d610b5b8f8ae55e8441426662330d49c24ea9266b"}}
