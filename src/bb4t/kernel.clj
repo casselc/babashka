@@ -159,6 +159,9 @@
               (cond
                 (or (nil? value) (boolean? value) (string? value)) nil
                 (integer? value) nil
+                (number? value)
+                (fail! "JSON numbers must be integers"
+                       {:value/type (some-> value class .getName)})
                 (vector? value) (doseq [item value] (walk item (inc depth)))
                 (and (map? value) (not (record? value)))
                 (doseq [[key item] value]
@@ -700,7 +703,7 @@
   (let [context (resolve-handle context-handles :context context)
         {:keys [events]} @(:event-state (:runtime context))]
     {:events (filterv #(= (:instance-id context) (:context/instance-id %))
-                       events)}))
+                      events)}))
 
 (defn subscribe [runtime subscriber]
   (let [runtime (resolve-handle runtime-handles :runtime runtime)]

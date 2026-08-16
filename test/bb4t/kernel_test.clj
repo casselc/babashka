@@ -85,6 +85,12 @@
                   #{:bb4t.data/json-read :bb4t.data/json-write
                     :bb4t.project/read :bb4t.duplicate/read})))))
 
+(deftest missing-build-provenance-fails-on-runtime-use-test
+  (with-redefs-fn {#'bb4t.kernel/build-commit-resource nil}
+    #(is (thrown-with-msg? clojure.lang.ExceptionInfo
+                           #"build provenance resource is missing"
+                           (runtime/create {})))))
+
 (deftest profile-attenuation-and-coordinate-test
   (let [runtime (test-runtime)
         minimal (context/create runtime {:profile :agent/minimal})
@@ -229,8 +235,10 @@
                                    [(map identity [1 2 3])])))
     (is (thrown? clojure.lang.ExceptionInfo
                  (operation/invoke pure :data.json/write [{:keyword 1}])))
-    (is (thrown? clojure.lang.ExceptionInfo
-                 (operation/invoke pure :data.json/read ["{\"x\":1.5}"])))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                          #"JSON numbers must be integers"
+                          (operation/invoke pure :data.json/read
+                                            ["{\"x\":1.5}"])))
     (is (thrown? clojure.lang.ExceptionInfo
                  (operation/invoke pure :data.json/write [1.5])))
     (is (thrown? clojure.lang.ExceptionInfo
