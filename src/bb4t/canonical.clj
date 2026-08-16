@@ -15,8 +15,15 @@
 
 (declare canonical-tree)
 
+(defn- canonical-pr-str [value]
+  (binding [*print-length* nil
+            *print-level* nil
+            *print-readably* true
+            *print-dup* false]
+    (pr-str value)))
+
 (defn- encoded [value]
-  (pr-str (canonical-tree value)))
+  (canonical-pr-str (canonical-tree value)))
 
 (defn canonical-tree
   "Converts a deliberately small inert-data domain to an ordered tagged tree."
@@ -34,7 +41,7 @@
     (map? value) [:map (->> value
                             (map (fn [[k v]]
                                    [(canonical-tree k) (canonical-tree v)]))
-                            (sort-by (comp pr-str first))
+                             (sort-by (comp canonical-pr-str first))
                             vec)]
     (vector? value) [:vector (mapv canonical-tree value)]
     (list? value) [:list (mapv canonical-tree value)]
@@ -44,7 +51,7 @@
     :else (reject! value :unsupported-type)))
 
 (defn canonical-string [value]
-  (pr-str (canonical-tree value)))
+  (canonical-pr-str (canonical-tree value)))
 
 (defn sha-256 [^String value]
   (let [digest (.digest (MessageDigest/getInstance "SHA-256")
@@ -59,4 +66,5 @@
                     {:coordinate/kind kind})))
   (str "sha256:"
        (sha-256
-        (pr-str [:bb4t.coordinate/v1 kind (canonical-tree value)]))))
+        (canonical-pr-str
+         [:bb4t.coordinate/v1 kind (canonical-tree value)]))))

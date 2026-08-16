@@ -2,12 +2,12 @@
   (:require [bb4t.canonical :as canonical]
             [bb4t.catalog :as catalog]
             [bb4t.context :as context]
-            [bb4t.events :as events]
-            [bb4t.kernel :as kernel]
-             [bb4t.operation :as operation]
-             [bb4t.runtime :as runtime]
-             [bb4t.value :as value]
-             [clojure.test :refer [deftest is testing]])
+             [bb4t.events :as events]
+             [bb4t.kernel :as kernel]
+            [bb4t.operation :as operation]
+            [bb4t.runtime :as runtime]
+            [bb4t.value :as value]
+            [clojure.test :refer [deftest is testing]])
   (:import [java.nio.file Files LinkOption OpenOption Path]
            [java.util UUID]))
 
@@ -27,6 +27,13 @@
 
 (defn invoked-data [description]
   (:value/data description))
+
+(defn bb4t-error [thunk]
+  (try
+    (thunk)
+    nil
+    (catch clojure.lang.ExceptionInfo error
+      (:bb4t/error (ex-data error)))))
 
 (defn equality-forge [target]
   (let [target-hash (.hashCode ^Object target)]
@@ -124,6 +131,16 @@
     (is (thrown? Throwable (context/evaluate minimal "(inc 1)")))
     (is (thrown? Throwable (context/evaluate minimal "(String. \"x\")")))
     (is (thrown? Throwable (context/evaluate minimal "(.getClass \"x\")")))))
+
+(deftest sci-default-authority-is-explicitly-denied-test
+  (let [runtime (test-runtime)
+        context (context/create runtime {:profile :agent/minimal})]
+    (doseq [symbol catalog/implicit-default-deny]
+      (is (thrown? Throwable (context/evaluate context (str symbol)))
+          (str "resolved implicit SCI Var " symbol)))
+    (doseq [class-symbol (keys catalog/closed-default-classes)]
+      (is (thrown? Throwable (context/evaluate context (str class-symbol)))
+          (str "resolved closed SCI class " class-symbol)))))
 
 (deftest authority-policy-is-part-of-runtime-and-context-coordinate-test
   (let [baseline-runtime (test-runtime)
@@ -236,8 +253,12 @@
                      (operation/invoke context :project/read [(str file)])))
         (is (thrown? clojure.lang.ExceptionInfo
                      (operation/invoke context :project/read ["."])))
-        (is (thrown? java.nio.charset.CharacterCodingException
-                     (operation/invoke context :project/read ["invalid.txt"])))
+        (is (= :operation-failed
+               (bb4t-error
+                #(operation/invoke context :project/read ["invalid.txt"]))))
+        (is (= :operation-failed
+               (bb4t-error
+                #(operation/invoke context :project/read ["missing.txt"]))))
         (Files/writeString file "12345" (make-array OpenOption 0))
         (is (thrown? clojure.lang.ExceptionInfo
                      (operation/invoke context :project/read ["file.txt"]))))
@@ -253,16 +274,24 @@
                       "bb4t-bb1-outside"
                       (make-array java.nio.file.attribute.FileAttribute 0))
         outside (.resolve outside-root "secret.txt")
-        link (.resolve root "escape.txt")]
+        link (.resolve root "escape.txt")
+        directory-link (.resolve root "escape-dir")]
     (try
       (Files/writeString outside "secret" (make-array OpenOption 0))
       (Files/createSymbolicLink link outside
                                 (make-array java.nio.file.attribute.FileAttribute 0))
+      (Files/createSymbolicLink directory-link outside-root
+                                (make-array java.nio.file.attribute.FileAttribute 0))
       (let [runtime (runtime/create {:resources {:project/root root}})
             context (context/create runtime {:profile :agent/project-read})]
         (is (thrown? clojure.lang.ExceptionInfo
-                     (operation/invoke context :project/read ["escape.txt"]))))
+                     (operation/invoke context :project/read ["escape.txt"])))
+        (is (= :operation-failed
+               (bb4t-error
+                #(operation/invoke context :project/read
+                                   ["escape-dir/secret.txt"])))))
       (finally
+        (Files/deleteIfExists directory-link)
         (Files/deleteIfExists link)
         (Files/deleteIfExists outside)
         (Files/deleteIfExists outside-root)
@@ -278,6 +307,8 @@
       (is (re-find #"authorized project root" (:out result))))
     (is (= :inert-data (:value/kind (value/describe {:ok true}))))
     (is (= :opaque (:value/kind (value/describe runtime))))
+    (is (= :opaque
+           (:value/kind (value/describe (nth (iterate vector nil) 65)))))
     (doseq [source ["(map str [1 2])"
                     "#\"x\""
                     "#inst \"2026-01-01T00:00:00.000-00:00\""
@@ -307,4 +338,26 @@
       (is (every? #(not-any? (set (keys (:data %))) [:args :result]) events))
       (is (every? #(= (:context/instance-id (context/describe context))
                       (:context/instance-id %))
-                  (:events (events/context-snapshot context)))))))
+                   (:events (events/context-snapshot context)))))))
+
+(deftest concurrent-events-have-exact-drop-count-test
+  (let [runtime (test-runtime {:event-limit 8})
+        contexts (vec (repeatedly 8
+                                  #(context/create runtime
+                                                   {:profile :agent/minimal})))
+        start (promise)
+        workers (mapv (fn [context]
+                        (future
+                          @start
+                          (dotimes [_ 50]
+                            (context/evaluate context "(+ 1 2)"))))
+                      contexts)]
+    (deliver start true)
+    (doseq [worker workers] @worker)
+    (let [{:keys [events events/dropped]} (events/snapshot runtime)
+          sequences (mapv :event/seq events)]
+      (is (= 8 (count events)))
+      (is (= dropped (- (peek sequences) (count sequences))))
+      (is (= sequences
+             (vec (range (inc (- (peek sequences) (count sequences)))
+                         (inc (peek sequences)))))))))

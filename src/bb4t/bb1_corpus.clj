@@ -1,11 +1,11 @@
 (ns bb4t.bb1-corpus
   (:require [bb4t.canonical :as canonical]
             [bb4t.context :as context]
-             [bb4t.events :as events]
-             [bb4t.operation :as operation]
-             [bb4t.runtime :as runtime]
-             [bb4t.value :as value]
-             [clojure.string :as str])
+            [bb4t.events :as events]
+            [bb4t.operation :as operation]
+            [bb4t.runtime :as runtime]
+            [bb4t.value :as value]
+            [clojure.string :as str])
   (:import [java.nio.file Files OpenOption]
            [java.nio.file.attribute FileAttribute]))
 
@@ -104,6 +104,41 @@
     :source "bb4t.context/create"
     :expected {:agent/minimal :deny
                :transform/pure :deny
+               :agent/project-read :deny}}
+   {:case/id :host/implicit-ns-var
+    :source "*ns*"
+    :expected {:agent/minimal :deny
+               :transform/pure :deny
+               :agent/project-read :deny}}
+   {:case/id :host/macroexpand-all
+    :source "clojure.walk/macroexpand-all"
+    :expected {:agent/minimal :deny
+               :transform/pure :deny
+               :agent/project-read :deny}}
+   {:case/id :host/eval
+    :source "(eval '(+ 1 2))"
+    :expected {:agent/minimal :deny
+               :transform/pure :deny
+               :agent/project-read :deny}}
+   {:case/id :host/require
+    :source "(require 'clojure.java.io)"
+    :expected {:agent/minimal :deny
+               :transform/pure :deny
+               :agent/project-read :deny}}
+   {:case/id :host/spit
+    :source "(spit \"bb4t-denied\" \"x\")"
+    :expected {:agent/minimal :deny
+               :transform/pure :deny
+               :agent/project-read :deny}}
+   {:case/id :host/file-constructor
+    :source "(java.io.File. \"x\")"
+    :expected {:agent/minimal :deny
+               :transform/pure :deny
+               :agent/project-read :deny}}
+   {:case/id :host/thread-sleep
+    :source "(Thread/sleep 1)"
+    :expected {:agent/minimal :deny
+               :transform/pure :deny
                :agent/project-read :deny}}])
 
 (defn- denied-error? [error]
@@ -165,6 +200,11 @@
         left-coordinate (canonical/coordinate :bb4t/test-vector left)
         right-coordinate (canonical/coordinate :bb4t/test-vector right)]
     {:order-independent? (= left-coordinate right-coordinate)
+     :print-bindings-independent?
+     (= left-coordinate
+        (binding [*print-length* 1
+                  *print-level* 1]
+          (canonical/coordinate :bb4t/test-vector left)))
      :coordinate left-coordinate
      :different-grant?
      (not= (canonical/coordinate :bb4t/context {:grants #{:data/json-read}})
@@ -191,6 +231,13 @@
     false
     (catch Throwable _ true)))
 
+(defn- operation-failure? [thunk]
+  (try
+    (thunk)
+    false
+    (catch clojure.lang.ExceptionInfo error
+      (= :operation-failed (:bb4t/error (ex-data error))))))
+
 (defn- equality-forge [target]
   (let [target-hash (.hashCode ^Object target)]
     (reify Object
@@ -210,7 +257,8 @@
         file (.resolve root "file.txt")
         invalid (.resolve root "invalid.txt")
         outside (.resolve outside-root "secret.txt")
-        link (.resolve root "escape.txt")]
+        link (.resolve root "escape.txt")
+        directory-link (.resolve root "escape-dir")]
     (try
       (Files/writeString file "1234" (make-array OpenOption 0))
       (Files/write invalid
@@ -218,6 +266,8 @@
                    (make-array OpenOption 0))
       (Files/writeString outside "secret" (make-array OpenOption 0))
       (Files/createSymbolicLink link outside (make-array FileAttribute 0))
+      (Files/createSymbolicLink directory-link outside-root
+                                (make-array FileAttribute 0))
       (let [runtime (runtime/create {:resources {:project/root root}})
             context (context/create runtime
                                     {:profile :agent/project-read
@@ -236,20 +286,31 @@
             symlink-escape? (any-failure?
                              #(operation/invoke context :project/read
                                                 ["escape.txt"]))
+            intermediate-symlink-escape?
+            (operation-failure?
+             #(operation/invoke context :project/read
+                                ["escape-dir/secret.txt"]))
             invalid-utf8? (any-failure?
                            #(operation/invoke context :project/read
-                                              ["invalid.txt"]))]
+                                              ["invalid.txt"]))
+            host-error-normalized?
+            (operation-failure?
+             #(operation/invoke context :project/read ["missing.txt"]))]
         (Files/writeString file "12345" (make-array OpenOption 0))
         {:project/normal-read? normal-read?
          :project/lexical-escape-denied? lexical-escape?
          :project/absolute-path-denied? absolute-escape?
          :project/directory-denied? directory?
          :project/symlink-escape-denied? symlink-escape?
+         :project/intermediate-symlink-escape-denied?
+         intermediate-symlink-escape?
          :project/invalid-utf8-denied? invalid-utf8?
+         :operation/host-error-normalized? host-error-normalized?
          :project/size-cap-enforced?
          (validation-failure?
           #(operation/invoke context :project/read ["file.txt"]))})
       (finally
+        (delete-if-present! directory-link)
         (delete-if-present! link)
         (delete-if-present! file)
         (delete-if-present! invalid)
@@ -347,8 +408,15 @@
         :value/uuid-result-opaque?
         (= {:value/kind :opaque :value/type "java.util.UUID"}
            (:value (context/evaluate minimal
-                                     "#uuid \"00000000-0000-0000-0000-000000000000\"")))
+                                      "#uuid \"00000000-0000-0000-0000-000000000000\"")))
+        :value/deep-result-opaque?
+        (= :opaque
+           (get-in (context/evaluate minimal
+                                     "(reduce vector nil (range 65))")
+                   [:value :value/kind]))
         :events/bounded? (and (= 3 (count events)) (pos? dropped))
+        :events/dropped-exact?
+        (= dropped (- (:event/seq (peek events)) (count events)))
         :events/structured?
         (every? #(and (integer? (:event/seq %))
                       (keyword? (:event/type %))

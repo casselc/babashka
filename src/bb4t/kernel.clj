@@ -39,7 +39,7 @@
 
 (defrecord RuntimeState
   [manifest coordinate catalog catalog-coordinate implementations resources
-   resource-descriptions event-limit events dropped event-seq subscribers])
+   resource-descriptions event-limit event-state subscribers])
 
 (defrecord ContextState
   [runtime instance-id spec spec-coordinate effective coordinate sci-context lock
@@ -304,22 +304,26 @@
   (str (Instant/now)))
 
 (defn- emit! [runtime context-coordinate instance-id event-type data]
-  (let [event {:event/id (str (UUID/randomUUID))
-               :event/type event-type
-               :event/seq (swap! (:event-seq runtime) inc)
-               :runtime/coordinate (:coordinate runtime)
-               :context/coordinate context-coordinate
-               :context/instance-id instance-id
-               :timestamp (timestamp)
-               :data data}]
-    (swap! (:events runtime)
-           (fn [events]
-             (let [next-events (conj events event)
-                   excess (- (count next-events) (:event-limit runtime))]
-               (if (pos? excess)
-                 (do (swap! (:dropped runtime) + excess)
-                     (subvec next-events excess))
-                 next-events))))
+  (let [event-base {:event/id (str (UUID/randomUUID))
+                    :event/type event-type
+                    :runtime/coordinate (:coordinate runtime)
+                    :context/coordinate context-coordinate
+                    :context/instance-id instance-id
+                    :timestamp (timestamp)
+                    :data data}
+        event-state
+        (swap! (:event-state runtime)
+               (fn [{:keys [events dropped next-seq]}]
+                 (let [event (assoc event-base :event/seq (inc next-seq))
+                       next-events (conj events event)
+                       excess (max 0 (- (count next-events)
+                                        (:event-limit runtime)))]
+                   {:events (if (pos? excess)
+                              (subvec next-events excess)
+                              next-events)
+                    :dropped (+ dropped excess)
+                    :next-seq (:event/seq event)})))
+        event (peek (:events event-state))]
     (doseq [[_ subscriber] @(:subscribers runtime)]
       (try
         (subscriber event)
@@ -372,23 +376,25 @@
                      :catalogued/libraries #{:cheshire}
                      :compiled/capabilities
                      (set (keys (:capabilities catalog/capability-catalog)))
-                    :sci/base {:construction :fresh
-                               :authorization :positive-allowlist
-                               :allow catalog/base-allow
-                               :default-interop-deny catalog/base-deny
-                               :unrestricted false
-                               :projected/classes 0
-                               :default-class-overrides
-                               catalog/closed-default-classes
-                               :supplied/imports 0
-                               :defaults :pinned-sci-defaults}}
+                     :sci/base {:construction :fresh
+                                :authorization :positive-allowlist
+                                :allow catalog/base-allow
+                                :default-interop-deny catalog/base-deny
+                                :unrestricted false
+                                :projected/classes 0
+                                :default-class-overrides
+                                catalog/closed-default-classes
+                                :supplied/imports 0
+                                :defaults :pinned-sci-defaults}}
           runtime-coordinate (canonical/coordinate :bb4t/runtime manifest)
           catalog-coordinate
           (canonical/coordinate :bb4t/catalog catalog/capability-catalog)
           runtime (->RuntimeState manifest runtime-coordinate
                                   catalog/capability-catalog catalog-coordinate
                                   implementations resources resource-descriptions
-                                  event-limit (atom []) (atom 0) (atom 0) (atom {}))]
+                                  event-limit
+                                  (atom {:events [] :dropped 0 :next-seq 0})
+                                  (atom {}))]
       (emit! runtime nil nil :runtime/created
              {:catalog/coordinate catalog-coordinate})
       runtime)))
@@ -507,7 +513,15 @@
                   :capability/id capability-id
                   :status :error
                   :error/type (.getName (class error))})
-          (throw error))))))
+          (if (or (not (instance? Exception error))
+                  (:bb4t/error (ex-data error)))
+            (throw error)
+            (throw (ex-info "Semantic operation failed"
+                            {:bb4t/error :operation-failed
+                             :operation/id operation-id
+                             :capability/id capability-id
+                             :error/type (.getName (class error))}
+                            error))))))))
 
 (defn- projection-data [runtime effective coordinate instance-id]
   (let [{:keys [projections] :as projected}
@@ -677,15 +691,17 @@
                         operation-id args))))
 
 (defn event-snapshot [runtime]
-  (let [runtime (resolve-handle runtime-handles :runtime runtime)]
-    {:events @(:events runtime)
-     :events/dropped @(:dropped runtime)}))
+  (let [runtime (resolve-handle runtime-handles :runtime runtime)
+        {:keys [events dropped]} @(:event-state runtime)]
+    {:events events
+     :events/dropped dropped}))
 
 (defn context-event-snapshot [context]
-  (let [context (resolve-handle context-handles :context context)]
+  (let [context (resolve-handle context-handles :context context)
+        {:keys [events dropped]} @(:event-state (:runtime context))]
     {:events (filterv #(= (:instance-id context) (:context/instance-id %))
-                      @(:events (:runtime context)))
-     :events/dropped @(:dropped (:runtime context))}))
+                      events)
+     :events/dropped dropped}))
 
 (defn subscribe [runtime subscriber]
   (let [runtime (resolve-handle runtime-handles :runtime runtime)]

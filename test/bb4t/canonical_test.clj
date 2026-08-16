@@ -10,6 +10,10 @@
         expected "sha256:2c1e6b7c6f844c15a7f6a67b0828b0fdc6d38c4fe6d436275bc802471c776d48"]
     (is (= expected (canonical/coordinate :bb4t/test-vector left)))
     (is (= expected (canonical/coordinate :bb4t/test-vector right)))
+    (is (= expected
+           (binding [*print-length* 1
+                     *print-level* 1]
+             (canonical/coordinate :bb4t/test-vector left))))
     (is (= (canonical/coordinate :bb4t/test-vector {:n 1})
            (canonical/coordinate :bb4t/test-vector {:n 1N})))
     (is (not= (canonical/coordinate :bb4t/runtime left)

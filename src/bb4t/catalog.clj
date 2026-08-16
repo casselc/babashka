@@ -69,13 +69,22 @@
   '#{* + - / = apropos assoc count conj def do doc first get hash-map hash-set
      if into let let* list map println quote range reduce rest str vector})
 
+(def implicit-default-deny
+  '#{*ns* *read-eval* *data-readers* *default-data-reader-fn*
+     *reader-resolver* *suppress-read* *unchecked-math* *warn-on-reflection*
+     *assert* *clojure-version* *file* global-hierarchy unquote
+     clojure.walk/macroexpand-all
+     clojure.lang.IAtom clojure.lang.IAtom2 clojure.lang.IDeref clojure.lang.IFn})
+
 (def base-deny
-  '#{. .. doto new
-     AssertionError. Exception. ArithmeticException. String. Integer. Number.
-     Double. Object.
-     java.lang.AssertionError. java.lang.Exception.
-     java.lang.ArithmeticException. java.lang.String. java.lang.Integer.
-     java.lang.Number. java.lang.Double. java.lang.Object.})
+  (into
+   '#{. .. doto new
+      AssertionError. Exception. ArithmeticException. String. Integer. Number.
+      Double. Object.
+      java.lang.AssertionError. java.lang.Exception.
+      java.lang.ArithmeticException. java.lang.String. java.lang.Integer.
+      java.lang.Number. java.lang.Double. java.lang.Object.}
+   implicit-default-deny))
 
 (def closed-default-classes
   (into {}
