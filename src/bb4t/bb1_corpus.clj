@@ -115,6 +115,46 @@
     :expected {:agent/minimal :deny
                :transform/pure :deny
                :agent/project-read :deny}}
+   {:case/id :host/implicit-iatom-dotted-var
+    :source "clojure.lang.IAtom"
+    :expected {:agent/minimal :deny
+               :transform/pure :deny
+               :agent/project-read :deny}}
+   {:case/id :host/implicit-iatom2-dotted-var
+    :source "clojure.lang.IAtom2"
+    :expected {:agent/minimal :deny
+               :transform/pure :deny
+               :agent/project-read :deny}}
+   {:case/id :host/implicit-ideref-dotted-var
+    :source "clojure.lang.IDeref"
+    :expected {:agent/minimal :deny
+               :transform/pure :deny
+               :agent/project-read :deny}}
+   {:case/id :host/implicit-ifn-dotted-var
+    :source "clojure.lang.IFn"
+    :expected {:agent/minimal :deny
+               :transform/pure :deny
+               :agent/project-read :deny}}
+   {:case/id :host/implicit-iatom-slash-var
+    :source "clojure.lang/IAtom"
+    :expected {:agent/minimal :deny
+               :transform/pure :deny
+               :agent/project-read :deny}}
+   {:case/id :host/implicit-iatom2-slash-var
+    :source "clojure.lang/IAtom2"
+    :expected {:agent/minimal :deny
+               :transform/pure :deny
+               :agent/project-read :deny}}
+   {:case/id :host/implicit-ideref-slash-var
+    :source "clojure.lang/IDeref"
+    :expected {:agent/minimal :deny
+               :transform/pure :deny
+               :agent/project-read :deny}}
+   {:case/id :host/implicit-ifn-slash-var
+    :source "clojure.lang/IFn"
+    :expected {:agent/minimal :deny
+               :transform/pure :deny
+               :agent/project-read :deny}}
    {:case/id :host/eval
     :source "(eval '(+ 1 2))"
     :expected {:agent/minimal :deny

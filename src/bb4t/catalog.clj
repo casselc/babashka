@@ -74,7 +74,8 @@
      *reader-resolver* *suppress-read* *unchecked-math* *warn-on-reflection*
      *assert* *clojure-version* *file* global-hierarchy unquote
      clojure.walk/macroexpand-all
-     clojure.lang.IAtom clojure.lang.IAtom2 clojure.lang.IDeref clojure.lang.IFn})
+     clojure.lang.IAtom clojure.lang.IAtom2 clojure.lang.IDeref clojure.lang.IFn
+     clojure.lang/IAtom clojure.lang/IAtom2 clojure.lang/IDeref clojure.lang/IFn})
 
 (def base-deny
   (into

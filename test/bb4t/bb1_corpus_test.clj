@@ -9,7 +9,7 @@
 (deftest shared-authority-corpus-test
   (let [result (corpus/run-corpus project-root)]
     (is (:pass? result))
-    (is (= 72 (:authority/case-count result)))
+    (is (= 96 (:authority/case-count result)))
     (is (= (:authority/case-count result)
            (:authority/pass-count result)
            (:authority/value-pass-count result)))
