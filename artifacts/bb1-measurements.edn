@@ -2,8 +2,8 @@
 
  :source
  {:branch :bb4t/bb1
-  :implementation-commit "455a91953b0e9f7e734073137abe7eda4158b73f"
-  :tree "06d6696e09719e424cd490a61a971a1fc350b3d7"
+  :implementation-commit "19512480f21bd9095d693dcd395f050f18c2d914"
+  :tree "647a74a6ed1707a3905937ad6031fd743623fa09"
   :upstream-commit "140ef9dcd770a54457a02fa29c3a2f643f4968d4"
   :sci-commit "64163c4560e085ffdcf47951b406f62f753b7f4c"}
 
@@ -15,7 +15,7 @@
  :build
  {:command ["docker" "build" "--platform" "linux/amd64"
             "--build-arg"
-            "BB1_COMMIT=455a91953b0e9f7e734073137abe7eda4158b73f"
+            "BB1_COMMIT=19512480f21bd9095d693dcd395f050f18c2d914"
             "--target" "artifacts" "--output"
             "type=local,dest=.bb1-ci-artifacts"
             "-f" "Dockerfile.bb1" "."]
@@ -24,17 +24,17 @@
                  :blob-filter :blob/none
                  :submodules :shallow-pinned}
   :measured-steps ["script/uberjar" "script/compile"]
-  :wall-ms 83640
-  :peak-rss-bytes 4705759232
+  :wall-ms 79950
+  :peak-rss-bytes 4719386624
   :result :pass
   :bb0-recorded-wall-ms 72140
-  :wall-delta-ms 11500
-  :wall-delta-percent 15.94122539506515
+  :wall-delta-ms 7810
+  :wall-delta-percent 10.82617133351816
   :comparison-note "BB0 was measured on the host and BB1 in the pinned container; treat the delta as directional."}
 
  :binary
  {:bytes 88213760
-  :sha256 "38f89f71cba03efebfa35564d8106cc5a03c506abb5db48926bf0401dc87abc6"
+  :sha256 "f5bbc65bfd01a3f9d50e66ec5fa91f0ec25f659100e26ebbf74b3630af764971"
   :format "ELF 64-bit LSB PIE, x86-64, dynamically linked, stripped"
   :dynamic-libraries ["libz.so.1" "libc.so.6"]
   :bb0-recorded-bytes 87296256
@@ -45,17 +45,17 @@
  {:clock :system/nano-time
   :warmup-per-profile 5
   :agent/minimal
-  {:samples 30 :min-ns 179952 :median-ns 183699 :p95-ns 188318 :max-ns 188579}
+  {:samples 30 :min-ns 177888 :median-ns 181565 :p95-ns 193007 :max-ns 435060}
   :transform/pure
-  {:samples 30 :min-ns 208408 :median-ns 214530 :p95-ns 236563 :max-ns 300608}
+  {:samples 30 :min-ns 201774 :median-ns 208838 :p95-ns 496390 :max-ns 503605}
   :agent/project-read
-  {:samples 30 :min-ns 268876 :median-ns 281571 :p95-ns 430381 :max-ns 436774}}
+  {:samples 30 :min-ns 258646 :median-ns 269617 :p95-ns 276861 :max-ns 565505}}
 
  :catalog
  {:capability-count 3
   :semantic-operation-count 3
   :profile-count 3
-  :coordinate "sha256:41fb72e52a1082c26693349d610b5b8f8ae55e8441426662330d49c24ea9266b"}
+  :coordinate "sha256:f132b513c4492e9cc9e22af088182d03d28b2059eab5c182dcbdf1db6e425f31"}
 
  :surface
  {:agent/minimal
@@ -79,10 +79,10 @@
  {:authority-cells 96
   :authority-allow-cells 12
   :authority-deny-cells 84
-  :packaged-assurance-checks 36
+  :packaged-assurance-checks 40
   :jvm-native-parity :equal
-  :focused-jvm {:tests 17 :assertions 159 :failures 0 :errors 0}
-  :native-main {:tests 364 :assertions 1139 :failures 0 :errors 0}
+  :focused-jvm {:tests 17 :assertions 163 :failures 0 :errors 0}
+  :native-main {:tests 364 :assertions 1143 :failures 0 :errors 0}
   :native-flaky {:tests 15 :assertions 23 :failures 0 :errors 0}
   :native-additional-phases
   [{:name :preloads :tests 1 :assertions 1 :failures 0 :errors 0}
@@ -92,6 +92,6 @@
    {:name :socket-repl :tests 3 :assertions 18 :failures 0 :errors 0}]}
 
  :upstream-diff
- {:from-product-dev {:files 24 :insertions 2721 :deletions 9 :commits 14}
-  :from-bb0-tag {:files 29 :insertions 2919 :deletions 82 :commits 15}
-  :from-upstream-release {:files 45 :insertions 4628 :deletions 3 :commits 19}}}
+ {:from-product-dev {:files 24 :insertions 2771 :deletions 9 :commits 18}
+  :from-bb0-tag {:files 29 :insertions 2969 :deletions 82 :commits 19}
+  :from-upstream-release {:files 45 :insertions 4678 :deletions 3 :commits 23}}}

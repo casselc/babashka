@@ -1,6 +1,6 @@
 # BB1 Findings
 
-**Implementation coordinate:** `455a91953b0e9f7e734073137abe7eda4158b73f`
+**Implementation coordinate:** `19512480f21bd9095d693dcd395f050f18c2d914`
 **Result:** Pass, independent fresh review accepted
 **Scope:** semantic capability restriction inside one pinned bb4t runtime
 
@@ -20,7 +20,7 @@ context construction API     no         no           no
 ```
 
 The normalized executable JVM and native corpora agreed on all 96 cells: 12 allowed
-and 84 denied. They also agreed on 36 packaged assurance checks covering malformed
+and 84 denied. They also agreed on 40 packaged assurance checks covering malformed
 specs, authority widening, embedded provenance, direct dispatch, canonical data,
 bounded events, every implemented JSON bound, opaque value/handle projection,
 forged-handle rejection, and project-root containment.
@@ -65,6 +65,10 @@ BB1 also supplies public `:classes` overrides with `{:class nil :closed true}` f
 18 default JVM classes and an explicit interop deny set. Data-driven default probes
 and constructor/method probes verify these boundaries on JVM and native.
 
+Each profile identifier is an explicit authorization preset. Omitted requested and
+authorized capability sets materialize that profile's maximum; callers can supply
+subsets to attenuate it, but selecting a profile is not an empty-authority default.
+
 `project/read` receives no caller-selected filesystem root. A trusted runtime binds
 logical resource `:project/root`; ContextSpec can only request that logical binding.
 Reads traverse relative path components from an opened `SecureDirectoryStream`, use
@@ -83,23 +87,34 @@ value/describe
 ```
 
 A fixed `--bb4t-internal` command runs evidence operations in the standalone jar and
-native image. `bb4t.*` host namespaces are not projected into ordinary Babashka SCI
-or bounded contexts.
+native image. The corpus is intentionally compiled into the BB1 artifact so the exact
+shipped native executable can run the same vectors as the JVM artifact. This
+milestone-only evidence surface creates temporary fixtures only when explicitly
+invoked; it is not an application-facing API, and `bb4t.*` host namespaces are not
+projected into ordinary Babashka SCI or bounded contexts.
 
 Build provenance is generated into `META-INF/babashka/bb4t-commit` from the exact
 fetched source commit before the standalone jar and native executable are built.
-`runtime/create` does not accept a caller-supplied commit. Evaluation and direct
-operation invocation return bounded `ValueDescription` data: small canonical values
-may include inert data, large canonical values are summarized, and unsupported host
-objects or values beyond the description depth/node budget expose only an opaque type
-name. Direct host operations therefore summarize strings over 4,096 canonical
-characters rather than returning their content. Implementation exceptions are
-normalized to `:bb4t/error :operation-failed`; validation and authorization retain
-their specific categories.
+The tracked `development` resource marks unmeasured source-tree builds; the exact-SHA
+builder replaces it. A missing or blank resource fails only when the BB1 runtime is
+created, not when ordinary Babashka starts. `runtime/create` does not accept a
+caller-supplied commit.
 
-Event sequence allocation, bounded retention, and the exact dropped count share one
-atomic state transition, including under concurrent context evaluation. Subscriber
-callbacks remain best-effort diagnostic delivery rather than a durable ordered log.
+Evaluation and direct operation invocation return bounded `ValueDescription` data:
+small canonical values may include inert data, large canonical values are summarized,
+and unsupported host objects or values beyond the description depth/node budget
+expose only an opaque type name. Direct host operations therefore summarize strings
+over 4,096 canonical characters rather than returning their content. The JSON
+capabilities accept only integer numbers because floating-point values are outside
+that canonical output domain; fractional JSON is rejected consistently on read and
+write. Implementation exceptions are normalized to `:bb4t/error :operation-failed`;
+validation and authorization retain their specific categories.
+
+Event sequence allocation, compact bounded retention, and the exact runtime dropped
+count share one atomic state transition, including under concurrent context
+evaluation. Context snapshots return only currently retained matching events rather
+than misreporting the runtime-global dropped count. Subscriber callbacks remain
+best-effort diagnostic delivery rather than a durable ordered log.
 
 ## Public API Use
 
@@ -122,8 +137,8 @@ as an implementation API.
 ## Deterministic Coordinates
 
 ```text
-runtime  sha256:38d8ba662b8f5ead2be1ec250ce2bda078deaf383b59b5f732631374b253dbbd
-catalog  sha256:41fb72e52a1082c26693349d610b5b8f8ae55e8441426662330d49c24ea9266b
+runtime  sha256:659a5f3f3bb0e68b4707cb7810d7652e64af78594b77f54fef62e7c36bdb5972
+catalog  sha256:f132b513c4492e9cc9e22af088182d03d28b2059eab5c182dcbdf1db6e425f31
 vector   sha256:2c1e6b7c6f844c15a7f6a67b0828b0fdc6d38c4fe6d436275bc802471c776d48
 ```
 
@@ -152,13 +167,13 @@ payloads.
 Focused JVM tests:
 
 ```text
-17 tests, 159 assertions, 0 failures, 0 errors
+17 tests, 163 assertions, 0 failures, 0 errors
 ```
 
 Full native upstream plus BB1 main phase:
 
 ```text
-364 tests, 1139 assertions, 0 failures, 0 errors
+364 tests, 1143 assertions, 0 failures, 0 errors
 ```
 
 The remaining native phases also passed: flaky 15/23, preloads 1/1, preload
@@ -176,11 +191,11 @@ Against the recorded BB0 baseline:
 BB0 binary             87,296,256 bytes
 BB1 binary             88,213,760 bytes
 delta                     917,504 bytes (+1.051%)
-BB1 SHA-256             38f89f71cba03efebfa35564d8106cc5a03c506abb5db48926bf0401dc87abc6
+BB1 SHA-256             f5bbc65bfd01a3f9d50e66ec5fa91f0ec25f659100e26ebbf74b3630af764971
 
 BB0 build wall             72.140 s
-BB1 build wall             83.640 s
-delta                      11.500 s (+15.94%)
+BB1 build wall             79.950 s
+delta                       7.810 s (+10.83%)
 ```
 
 The BB0 timing was measured on the host while BB1 used the pinned container, so the
@@ -190,9 +205,9 @@ Native context construction after five warmups, 30 samples per profile:
 
 ```text
 profile                 median       p95
-agent/minimal           0.184 ms    0.188 ms
-transform/pure          0.215 ms    0.237 ms
-agent/project-read      0.282 ms    0.430 ms
+agent/minimal           0.182 ms    0.193 ms
+transform/pure          0.209 ms    0.496 ms
+agent/project-read      0.270 ms    0.277 ms
 ```
 
 The catalog has 3 capabilities and 3 operations. Capability projections contain
@@ -200,10 +215,10 @@ The catalog has 3 capabilities and 3 operations. Capability projections contain
 the base `user` namespace with `apropos` and `doc`, total projected surface counts
 are 1/2, 2/4, and 3/5. No Java class is projected.
 
-From `bb4t/dev`, the measured BB1 coordinate changes 24 files with 2,721 insertions
-and 9 deletions across fourteen commits. From the immutable BB0 tag, product-roadmap
-and BB1 work together change 29 files with 2,919 insertions and 82 deletions across
-fifteen commits.
+From `bb4t/dev`, the measured BB1 coordinate changes 24 files with 2,771 insertions
+and 9 deletions across eighteen commits. From the immutable BB0 tag, product-roadmap
+and BB1 work together change 29 files with 2,969 insertions and 82 deletions across
+nineteen commits.
 
 Machine-readable values are in `artifacts/bb1-measurements.edn` and
 `artifacts/bb1-authority.edn`. Raw logs, corpora, measurements, and the binary remain
@@ -221,6 +236,13 @@ initial Kimi review identified alternate slash spellings for four SCI protocol V
 the measured implementation explicitly denies and probes both dotted and slash
 spellings across all profiles on JVM and native.
 
+A subsequent pull-request review found that `subvec` retained historical event
+storage, provenance validation ran too early, fractional JSON became opaque on return,
+and context snapshots reported a runtime-global drop count. The final measured
+implementation compacts retained events, defers missing-provenance failure to BB1
+runtime creation, rejects fractional JSON on both read and write, and omits the
+misleading context drop field.
+
 ## Security And Isolation Limits
 
 BB1 demonstrates semantic capability restriction within the runtime. It does not
@@ -234,6 +256,8 @@ Specifically, BB1 does not establish:
 - hostile concurrent filesystem mutation beyond secure relative traversal,
   including replacement of the already-resolved project-root directory;
 - network, CPU, memory, deadline, or process isolation;
+- safety from accidental unbounded computation by a buggy script; allowed sequence
+  operations can still hang a caller or exhaust the containing process;
 - bounded stdout/stderr capture during evaluation;
 - authorization policy correctness beyond the trusted ContextSpec decision;
 - durable event integrity, confidentiality, total subscriber ordering, or replay;
@@ -255,8 +279,8 @@ complete security sandbox.
    unknown or widening inputs fail before context construction.
 4. **Canonical manifests free of live objects?** Yes, enforced by rejection tests.
 5. **Deterministic coordinates?** Yes for the defined canonical domain and vectors.
-6. **Native matches JVM?** Yes for the normalized 96-cell corpus and 36 checks.
-7. **Fork divergence?** 24 files, +2,721/-9 from `bb4t/dev` at the evidence commit.
+6. **Native matches JVM?** Yes for the normalized 96-cell corpus and 40 checks.
+7. **Fork divergence?** 24 files, +2,771/-9 from `bb4t/dev` at the evidence commit.
 8. **Claims not established?** OS/hostile-code isolation and the limits above.
 9. **Clean external-client seam?** Yes; fresh reviews accepted the façades, which
    return bounded descriptions/data and do not expose mutable evaluator objects.

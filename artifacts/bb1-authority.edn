@@ -1,20 +1,20 @@
 {:schema/version 1
- :implementation-commit "455a91953b0e9f7e734073137abe7eda4158b73f"
+ :implementation-commit "19512480f21bd9095d693dcd395f050f18c2d914"
 
  :coordinates
- {:runtime "sha256:38d8ba662b8f5ead2be1ec250ce2bda078deaf383b59b5f732631374b253dbbd"
-  :catalog "sha256:41fb72e52a1082c26693349d610b5b8f8ae55e8441426662330d49c24ea9266b"
+ {:runtime "sha256:659a5f3f3bb0e68b4707cb7810d7652e64af78594b77f54fef62e7c36bdb5972"
+  :catalog "sha256:f132b513c4492e9cc9e22af088182d03d28b2059eab5c182dcbdf1db6e425f31"
   :canonical-test-vector "sha256:2c1e6b7c6f844c15a7f6a67b0828b0fdc6d38c4fe6d436275bc802471c776d48"
   :contexts
   {:agent/minimal
    {:context-spec "sha256:32906066a32169f44ca1c1c25581e8eec74a60b6bddb565b21bf14c3b5dc79bc"
-    :effective "sha256:ab6e1cfe8874af4e0072226b5d70781e1e4bff44a4b9e3fd7f6c7cb1d5873c5c"}
+    :effective "sha256:c23fda207552a10390bdea44444f3f7608e4416fd46b530b30ea0a6474fa98d3"}
    :transform/pure
    {:context-spec "sha256:80794cbe814770e19d369ff9e2d9d2fb609ed2ca0fd091c803b316767edea86e"
-    :effective "sha256:118805a0ce32d12bd16a1daf81e7ce729f7f1ec9fe8238635a2062562c909a7a"}
+    :effective "sha256:4b2867cf1b3c1bba176d9a1a84a879f001a0a0245a5d6f33f0a2ad98a59bfe36"}
    :agent/project-read
    {:context-spec "sha256:56afcaaf18ea2ef16dbdf684bced9f45be2e93dc4a30e774ddab2f6f01297937"
-    :effective "sha256:3ddb991f50f9f3e6a841a8702ca15d641ba0b62e9fec48bf529fa297da40be96"
+    :effective "sha256:f61eb5960ccf6d5020ecb450f765a9e3e92a2e982a52c7a977268375222677b6"
     :note "Effective coordinate includes the real authorized project-root path used by this build."}}}
 
  :authority
@@ -26,9 +26,9 @@
   :normalized-parity :equal}
 
  :assurance
- {:checks 36
-  :jvm-pass 36
-  :native-pass 36
+ {:checks 40
+  :jvm-pass 40
+  :native-pass 40
   :normalized-parity :equal
   :covered
   #{:spec/unknown-profile-fails?
@@ -46,6 +46,8 @@
     :operation/direct-dispatch-denied?
     :operation/host-error-normalized?
     :json/trailing-input-denied?
+    :json/fractional-read-denied?
+    :json/fractional-write-denied?
     :json/lazy-value-denied?
     :json/input-byte-cap-enforced?
     :json/output-byte-cap-enforced?
@@ -57,7 +59,9 @@
     :value/uuid-result-opaque?
     :value/deep-result-opaque?
     :events/bounded?
+    :events/storage-compacted?
     :events/dropped-exact?
+    :events/context-drop-not-misreported?
     :events/structured?
     :project/normal-read?
     :project/lexical-escape-denied?
@@ -73,10 +77,10 @@
   :doc-project-read true}
 
  :raw-local-evidence
- {:corpus-jvm-sha256 "cff01c8b9349a92df6d7721bfe59b2a9a3f4da308bea2b8f11b7b649f043a3e1"
-  :corpus-native-sha256 "a1c532c909f1d718fbbdcb636eba7267ff0cdd1c7a6d50e888ae2634a4569c67"
-  :context-latency-native-sha256 "5cc4ee5924ef01650404880a79db3b2040e88880f70a871ee4b7daaeaffe008c"
-  :build-log-sha256 "cc36160b27c1ff54165e8d9a19e5809145cc69073dded8d5f8c8543912c83a00"
-  :jvm-test-log-sha256 "127e8932b7fc7592673841270466d52c2d862cb560f36dd8115b7df91b5a10c0"
-  :native-test-log-sha256 "36b2c81dbf1c2e1e6abdcab67e6d21c7e76b2dfb877103b4a64ddc590d920c27"
+ {:corpus-jvm-sha256 "f79eecca01c9880b57cd3b816f9ff9ec54c9804c7a09b2b8470ef0c2b3681b56"
+  :corpus-native-sha256 "b797264aeb1412427b3924f0294b21c1d849e71fd36766845fbac7fbf8b4916d"
+  :context-latency-native-sha256 "f14ace59cb47d51d4fcdd4f0585c261637692c0235da2e92b2a61b7a3e2d45a0"
+  :build-log-sha256 "89e46e89b919d6950092633095e9a5af7b57c4f0b3f967c06659286b20728399"
+  :jvm-test-log-sha256 "7d33a629ddd56c0742ea76f371b16c74c599fbf78ee78b1171536eee7a29b3ee"
+  :native-test-log-sha256 "c4877ffcbfe447470b3a55a93db704baba32421fc7fff81da1e6cf8d6bfdb97f"
   :note "Raw corpus files contain ephemeral context instance IDs and remain ignored local artifacts."}}
