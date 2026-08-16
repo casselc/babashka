@@ -20,18 +20,18 @@
    :leiningen "2.9.8"}
 
  :features
-  {:mode :upstream-baseline
-   :compiled-universe
-   {:distribution :babashka/upstream-baseline
-    :version "1.13.219"
-    :source/commit "140ef9dcd770a54457a02fa29c3a2f643f4968d4"
-    :feature-selection :upstream/default}}
+ {:mode :upstream-baseline
+  :compiled-universe
+  {:distribution :babashka/upstream-baseline
+   :version "1.13.219"
+   :source/commit "140ef9dcd770a54457a02fa29c3a2f643f4968d4"
+   :feature-selection :upstream/default}}
 
  :libraries
-  {:catalogued
-   {:cheshire {:availability :compiled
-               :use :bounded-json-capability}}
-   :uncatalogued-compiled-universe :upstream-baseline}
+ {:catalogued
+  {:cheshire {:availability :compiled
+              :use :bounded-json-capability}}
+  :uncatalogued-compiled-universe :upstream-baseline}
 
  :capabilities
  {:catalog/ns bb4t.catalog
@@ -41,6 +41,6 @@
  :surfaces #{:internal/bb1-evidence}
 
  :evidence
- {:implementation-commit "734c7c9d0f205f3ecd50600f588eb93374b31671"
-  :runtime-coordinate "sha256:0145fe19a83cff57f67b5c1883454b217f824e525bd925db2bbc1a666e1f34c1"
+ {:implementation-commit "7ac2564fc94304c44189068a3f95ae9693d3feae"
+  :runtime-coordinate "sha256:56d927496acb7e5e84416623cf327bd7eaf1e7ff5212ec13b327d5144c07fbc3"
   :catalog-coordinate "sha256:41fb72e52a1082c26693349d610b5b8f8ae55e8441426662330d49c24ea9266b"}}

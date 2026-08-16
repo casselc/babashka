@@ -2,8 +2,8 @@
 
  :source
  {:branch :bb4t/bb1
-  :implementation-commit "734c7c9d0f205f3ecd50600f588eb93374b31671"
-  :tree "f3babf8c25efc4271b524666aec83bb99eea9b88"
+  :implementation-commit "7ac2564fc94304c44189068a3f95ae9693d3feae"
+  :tree "a77fc960c67fd896c4cf0e6f3453ca656d0c6ae3"
   :upstream-commit "140ef9dcd770a54457a02fa29c3a2f643f4968d4"
   :sci-commit "64163c4560e085ffdcf47951b406f62f753b7f4c"}
 
@@ -13,22 +13,28 @@
   :leiningen "2.9.8"}
 
  :build
- {:command ["docker" "build" "--file" "Dockerfile.bb1" "--target" "ci"
+ {:command ["docker" "build" "--platform" "linux/amd64"
             "--build-arg"
-            "BB1_COMMIT=734c7c9d0f205f3ecd50600f588eb93374b31671"
-            "--tag" "bb4t-bb1-ci" "."]
+            "BB1_COMMIT=7ac2564fc94304c44189068a3f95ae9693d3feae"
+            "--target" "artifacts" "--output"
+            "type=local,dest=.bb1-ci-artifacts"
+            "-f" "Dockerfile.bb1" "."]
+  :source-fetch {:commit-addressed true
+                 :full-commit-graph true
+                 :blob-filter :blob/none
+                 :submodules :shallow-pinned}
   :measured-steps ["script/uberjar" "script/compile"]
-  :wall-ms 89860
-  :peak-rss-bytes 4740517888
+  :wall-ms 81020
+  :peak-rss-bytes 4651900928
   :result :pass
   :bb0-recorded-wall-ms 72140
-  :wall-delta-ms 17720
-  :wall-delta-percent 24.56334904352648
+  :wall-delta-ms 8880
+  :wall-delta-percent 12.309398392015531
   :comparison-note "BB0 was measured on the host and BB1 in the pinned container; treat the delta as directional."}
 
  :binary
  {:bytes 88148224
-  :sha256 "f37741f4898b6d340453c3c0df851f327ef26245ed4ad6398d9d6423aa3e0a54"
+  :sha256 "1f1ec02d919942e97cf5382efee3520c7f979629a0a0257dbb66deee5295f2f6"
   :format "ELF 64-bit LSB PIE, x86-64, dynamically linked, stripped"
   :dynamic-libraries ["libz.so.1" "libc.so.6"]
   :bb0-recorded-bytes 87296256
@@ -39,11 +45,11 @@
  {:clock :system/nano-time
   :warmup-per-profile 5
   :agent/minimal
-  {:samples 30 :min-ns 137719 :median-ns 141367 :p95-ns 144673 :max-ns 144903}
+  {:samples 30 :min-ns 142038 :median-ns 146777 :p95-ns 209540 :max-ns 377339}
   :transform/pure
-  {:samples 30 :min-ns 159803 :median-ns 164852 :p95-ns 181354 :max-ns 224359}
+  {:samples 30 :min-ns 165995 :median-ns 170314 :p95-ns 194611 :max-ns 196395}
   :agent/project-read
-  {:samples 30 :min-ns 208738 :median-ns 217525 :p95-ns 405564 :max-ns 707203}}
+  {:samples 30 :min-ns 209601 :median-ns 222617 :p95-ns 354524 :max-ns 368121}}
 
  :catalog
  {:capability-count 3
@@ -54,23 +60,29 @@
  :surface
  {:agent/minimal
   {:allow-symbol-count 29 :deny-symbol-count 20
-   :projected-namespace-count 0 :projected-var-count 0 :projected-class-count 0}
+   :base-namespace-count 1 :base-var-count 2
+   :capability-namespace-count 0 :capability-var-count 0
+   :total-namespace-count 1 :total-var-count 2 :projected-class-count 0}
   :transform/pure
   {:allow-symbol-count 31 :deny-symbol-count 20
-   :projected-namespace-count 1 :projected-var-count 2 :projected-class-count 0}
+   :base-namespace-count 1 :base-var-count 2
+   :capability-namespace-count 1 :capability-var-count 2
+   :total-namespace-count 2 :total-var-count 4 :projected-class-count 0}
   :agent/project-read
   {:allow-symbol-count 32 :deny-symbol-count 20
-   :projected-namespace-count 2 :projected-var-count 3 :projected-class-count 0}
+   :base-namespace-count 1 :base-var-count 2
+   :capability-namespace-count 2 :capability-var-count 3
+   :total-namespace-count 3 :total-var-count 5 :projected-class-count 0}
   :closed-sci-default-class-count 18}
 
  :tests
  {:authority-cells 51
   :authority-allow-cells 12
   :authority-deny-cells 39
-  :packaged-assurance-checks 19
+  :packaged-assurance-checks 32
   :jvm-native-parity :equal
-  :focused-jvm {:tests 15 :assertions 82 :failures 0 :errors 0}
-  :native-main {:tests 362 :assertions 1062 :failures 0 :errors 0}
+  :focused-jvm {:tests 15 :assertions 112 :failures 0 :errors 0}
+  :native-main {:tests 362 :assertions 1092 :failures 0 :errors 0}
   :native-flaky {:tests 15 :assertions 23 :failures 0 :errors 0}
   :native-additional-phases
   [{:name :preloads :tests 1 :assertions 1 :failures 0 :errors 0}
@@ -80,6 +92,6 @@
    {:name :socket-repl :tests 3 :assertions 18 :failures 0 :errors 0}]}
 
  :upstream-diff
- {:from-product-dev {:files 19 :insertions 1902 :deletions 3 :commits 2}
-  :from-bb0-tag {:files 24 :insertions 2100 :deletions 76 :commits 3}
-  :from-upstream-release {:files 41 :insertions 3815 :deletions 3}}}
+ {:from-product-dev {:files 24 :insertions 2424 :deletions 9 :commits 9}
+  :from-bb0-tag {:files 29 :insertions 2622 :deletions 82 :commits 10}
+  :from-upstream-release {:files 45 :insertions 4331 :deletions 3 :commits 14}}}

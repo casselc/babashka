@@ -1,6 +1,6 @@
 # BB1 Findings
 
-**Implementation coordinate:** `734c7c9d0f205f3ecd50600f588eb93374b31671`
+**Implementation coordinate:** `7ac2564fc94304c44189068a3f95ae9693d3feae`
 **Result:** Pass, proceed to fresh BB1 review
 **Scope:** semantic capability restriction inside one pinned bb4t runtime
 
@@ -20,15 +20,17 @@ context construction API     no         no           no
 ```
 
 The executable JVM and native corpora agreed on all 51 cells: 12 allowed and 39
-denied. They also agreed on 19 packaged assurance checks covering malformed specs,
-authority widening, direct dispatch, canonical data, bounded events, JSON bounds,
-and project-root containment.
+denied. They also agreed on 32 packaged assurance checks covering malformed specs,
+authority widening, embedded provenance, direct dispatch, canonical data, bounded
+events, every implemented JSON bound, opaque value/handle projection, forged-handle
+rejection, and project-root containment.
 
 ## Implementation
 
 The canonical side is inert data:
 
-- `RuntimeManifest` records upstream/SCI/build source coordinates, compiled
+- `RuntimeManifest` records the pinned full upstream Babashka compiled universe,
+  upstream/SCI/build source coordinates, BB1-catalogued libraries, compiled semantic
   capabilities, and the complete base SCI authority policy;
 - `CapabilityCatalog` contains three `CapabilitySpec` values and three
   `SemanticOperation` descriptions;
@@ -37,12 +39,20 @@ The canonical side is inert data:
 
 The live side is separate:
 
-- `RuntimeState` owns implementation functions, real resource paths, event atoms,
-  and subscribers;
-- `ContextState` owns the SCI context, evaluation lock, and opaque instance identity;
+- private `RuntimeState` owns implementation functions, real resource paths, event
+  atoms, and subscribers;
+- private `ContextState` owns the SCI context, evaluation lock, and instance identity;
+- clients receive identity-only runtime/context handles backed by private weak
+  registries, so record fields and the SCI evaluator are not map-accessible;
 - bounded SCI Vars capture a context and call the same checked semantic dispatcher
   as trusted host clients;
-- no live object is accepted by canonicalization or returned by describe APIs.
+- no live object is accepted by canonicalization or returned as an evaluated or
+  operation value.
+
+The full stock Babashka baseline remains build-time possibility. Cheshire is the
+only library catalogued by BB1 because it backs the bounded JSON operations. This
+catalogue is not an inventory of everything in the binary, and the presence of any
+stock namespace or class does not grant it to a bounded SCI context.
 
 The three profiles are additive fresh `sci/init` contexts. They never fork or reuse
 Babashka's normal unrestricted context. A positive symbol allowlist controls Vars.
@@ -71,6 +81,13 @@ A fixed `--bb4t-internal` command runs evidence operations in the standalone jar
 native image. `bb4t.*` host namespaces are not projected into ordinary Babashka SCI
 or bounded contexts.
 
+Build provenance is generated into `META-INF/babashka/bb4t-commit` from the exact
+fetched source commit before the standalone jar and native executable are built.
+`runtime/create` does not accept a caller-supplied commit. Evaluation and direct
+operation invocation return bounded `ValueDescription` data: small canonical values
+may include inert data, large canonical values are summarized, and unsupported host
+objects expose only an opaque type name.
+
 ## Public API Use
 
 BB1 uses only public `sci.core` APIs:
@@ -92,7 +109,7 @@ as an implementation API.
 ## Deterministic Coordinates
 
 ```text
-runtime  sha256:0145fe19a83cff57f67b5c1883454b217f824e525bd925db2bbc1a666e1f34c1
+runtime  sha256:56d927496acb7e5e84416623cf327bd7eaf1e7ff5212ec13b327d5144c07fbc3
 catalog  sha256:41fb72e52a1082c26693349d610b5b8f8ae55e8441426662330d49c24ea9266b
 vector   sha256:2c1e6b7c6f844c15a7f6a67b0828b0fdc6d38c4fe6d436275bc802471c776d48
 ```
@@ -109,30 +126,32 @@ includes the resolved authorized root because changing that root changes authori
 
 ## Native And JVM Evidence
 
-The BB1 build cloned the exact published implementation commit recursively and
-verified SCI `64163c4560e085ffdcf47951b406f62f753b7f4c`. The standalone JVM jar and
-native executable emitted equal normalized parity payloads.
+The BB1 build fetched the exact published implementation SHA directly, with a full
+commit graph and filtered blobs, then checked out shallow pinned submodules. It
+verified BB0/upstream ancestry and SCI
+`64163c4560e085ffdcf47951b406f62f753b7f4c`. The command remains valid after the
+`bb4t/bb1` branch advances because source resolution does not use the branch tip.
+The standalone JVM jar and native executable emitted equal normalized parity
+payloads.
 
 Focused JVM tests:
 
 ```text
-15 tests, 82 assertions, 0 failures, 0 errors
+15 tests, 112 assertions, 0 failures, 0 errors
 ```
 
 Full native upstream plus BB1 main phase:
 
 ```text
-362 tests, 1062 assertions, 0 failures, 0 errors
+362 tests, 1092 assertions, 0 failures, 0 errors
 ```
 
 The remaining native phases also passed: flaky 15/23, preloads 1/1, preload
 location 1/1, classpath environment 1/1, pod 1/2, and socket REPL 3/18.
 
-An exploratory full upstream JVM run was not promoted to a BB1 gate. It reported
-362 tests, 1045 assertions, zero failures, and two errors in pod-backed uberjar
-metadata subprocesses under the scrubbed JVM environment. The BB1-focused JVM suite
-and packaged JVM corpus passed; the same pod paths passed in the authoritative native
-suite. The exact reason for the JVM-only subprocess EOFs was not established.
+The full upstream JVM suite is not a BB1 gate and no result for it is claimed here.
+The focused JVM suite covers BB1 directly; the complete upstream-plus-BB1 suite is
+run against the authoritative native artifact, including its pod-backed paths.
 
 ## Measurements
 
@@ -142,11 +161,11 @@ Against the recorded BB0 baseline:
 BB0 binary             87,296,256 bytes
 BB1 binary             88,148,224 bytes
 delta                     851,968 bytes (+0.976%)
-BB1 SHA-256             f37741f4898b6d340453c3c0df851f327ef26245ed4ad6398d9d6423aa3e0a54
+BB1 SHA-256             1f1ec02d919942e97cf5382efee3520c7f979629a0a0257dbb66deee5295f2f6
 
 BB0 build wall             72.140 s
-BB1 build wall             89.860 s
-delta                      17.720 s (+24.56%)
+BB1 build wall             81.020 s
+delta                       8.880 s (+12.31%)
 ```
 
 The BB0 timing was measured on the host while BB1 used the pinned container, so the
@@ -156,22 +175,28 @@ Native context construction after five warmups, 30 samples per profile:
 
 ```text
 profile                 median       p95
-agent/minimal           0.141 ms    0.145 ms
-transform/pure          0.165 ms    0.181 ms
-agent/project-read      0.218 ms    0.406 ms
+agent/minimal           0.147 ms    0.210 ms
+transform/pure          0.170 ms    0.195 ms
+agent/project-read      0.223 ms    0.355 ms
 ```
 
-The catalog has 3 capabilities and 3 operations. Projected SCI surfaces contain
-0/0, 1/2, and 2/3 namespace/Var counts for minimal, pure, and project-read. No Java
-class is projected.
+The catalog has 3 capabilities and 3 operations. Capability projections contain
+0/0, 1/2, and 2/3 namespace/Var counts for minimal, pure, and project-read. Including
+the base `user` namespace with `apropos` and `doc`, total projected surface counts
+are 1/2, 2/4, and 3/5. No Java class is projected.
 
-From `bb4t/dev`, BB1 changes 19 files with 1,902 insertions and 3 deletions across
-two implementation commits. From the immutable BB0 tag, product-roadmap and BB1
-work together change 24 files with 2,100 insertions and 76 deletions.
+From `bb4t/dev`, the measured BB1 coordinate changes 24 files with 2,424 insertions
+and 9 deletions across nine commits. From the immutable BB0 tag, product-roadmap and
+BB1 work together change 29 files with 2,622 insertions and 82 deletions across ten
+commits.
 
 Machine-readable values are in `artifacts/bb1-measurements.edn` and
 `artifacts/bb1-authority.edn`. Raw logs, corpora, measurements, and the binary remain
 under ignored `.bb1-ci-artifacts/` locally.
+
+`PACKAGE_MANIFEST.json` remains the immutable bootstrap delivery manifest described
+by the BB0 provenance record. Its checksums intentionally describe the delivered
+starter package, not the current BB1 working tree.
 
 ## Security And Isolation Limits
 
@@ -199,10 +224,10 @@ complete security sandbox.
    unknown or widening inputs fail before context construction.
 4. **Canonical manifests free of live objects?** Yes, enforced by rejection tests.
 5. **Deterministic coordinates?** Yes for the defined canonical domain and vectors.
-6. **Native matches JVM?** Yes for the normalized 51-cell corpus and 19 checks.
-7. **Fork divergence?** 19 files, +1,902/-3 from `bb4t/dev` at the evidence commit.
+6. **Native matches JVM?** Yes for the normalized 51-cell corpus and 32 checks.
+7. **Fork divergence?** 24 files, +2,424/-9 from `bb4t/dev` at the evidence commit.
 8. **Claims not established?** OS/hostile-code isolation and the limits above.
-9. **Clean external-client seam?** Yes, subject to fresh review; façades return data
-   and do not require clients to access mutable implementation state.
+9. **Clean external-client seam?** Yes, subject to fresh review; façades return
+   bounded descriptions/data and do not expose mutable evaluator objects.
 10. **Proceed, revise, or stop?** Proceed to the fresh BB1 review gate. Do not start
     bbagent until that review accepts or repairs this kernel.

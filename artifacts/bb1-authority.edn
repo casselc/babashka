@@ -1,20 +1,20 @@
 {:schema/version 1
- :implementation-commit "734c7c9d0f205f3ecd50600f588eb93374b31671"
+ :implementation-commit "7ac2564fc94304c44189068a3f95ae9693d3feae"
 
  :coordinates
- {:runtime "sha256:0145fe19a83cff57f67b5c1883454b217f824e525bd925db2bbc1a666e1f34c1"
+ {:runtime "sha256:56d927496acb7e5e84416623cf327bd7eaf1e7ff5212ec13b327d5144c07fbc3"
   :catalog "sha256:41fb72e52a1082c26693349d610b5b8f8ae55e8441426662330d49c24ea9266b"
   :canonical-test-vector "sha256:2c1e6b7c6f844c15a7f6a67b0828b0fdc6d38c4fe6d436275bc802471c776d48"
   :contexts
   {:agent/minimal
    {:context-spec "sha256:32906066a32169f44ca1c1c25581e8eec74a60b6bddb565b21bf14c3b5dc79bc"
-    :effective "sha256:badd48bb365ef73a3c8d69420c33fceea1ade7080cfd19511c362f21dd8e16d4"}
+    :effective "sha256:164318c8cc03b9eefffd778e41e866a6aab75c1c3bb16a32fb58fc066427f0a5"}
    :transform/pure
    {:context-spec "sha256:80794cbe814770e19d369ff9e2d9d2fb609ed2ca0fd091c803b316767edea86e"
-    :effective "sha256:c8b111f2c8a27bd3583ff3b5cea86a8884ba411f23bca5506490b668a814ae0a"}
+    :effective "sha256:72066b5f5f0b324625247e22ea3da8344f2af86ea0324646e2f3920de737a05c"}
    :agent/project-read
    {:context-spec "sha256:56afcaaf18ea2ef16dbdf684bced9f45be2e93dc4a30e774ddab2f6f01297937"
-    :effective "sha256:631f1fdbdab1cd16407580c45ef47a0d0a4aedc56543e4165e52266d40303142"
+    :effective "sha256:7cfad711402ff356946cf2ab484f6492b4e24dbf9d7fac9f3b3cdf2cf97557bf"
     :note "Effective coordinate includes the real authorized project-root path used by this build."}}}
 
  :authority
@@ -26,37 +26,53 @@
   :normalized-parity :equal}
 
  :assurance
- {:checks 19
-  :jvm-pass 19
-  :native-pass 19
+ {:checks 32
+  :jvm-pass 32
+  :native-pass 32
   :normalized-parity :equal
   :covered
-  #{:spec/unknown-profile
-    :spec/unknown-key
-    :spec/profile-widening
-    :spec/missing-resource
-    :runtime/unknown-resource
-    :runtime/inert-manifest
-    :runtime/authority-policy-coordinate
-    :operation/direct-dispatch-authorization
-    :json/trailing-input
-    :json/lazy-value
-    :events/bounded
-    :events/structured
-    :project/normal-read
-    :project/lexical-escape
-    :project/absolute-path
-    :project/directory
-    :project/symlink-escape
-    :project/invalid-utf8
-    :project/size-cap}}
+  #{:spec/unknown-profile-fails?
+    :spec/unknown-key-fails?
+    :spec/profile-widening-fails?
+    :spec/missing-resource-fails?
+    :runtime/unknown-resource-fails?
+    :runtime/provenance-override-fails?
+    :runtime/manifest-inert?
+    :handle/runtime-opaque?
+    :handle/context-opaque?
+    :handle/forged-runtime-denied?
+    :handle/forged-context-denied?
+    :runtime/authority-policy-recorded?
+    :operation/direct-dispatch-denied?
+    :json/trailing-input-denied?
+    :json/lazy-value-denied?
+    :json/input-byte-cap-enforced?
+    :json/output-byte-cap-enforced?
+    :json/depth-cap-enforced?
+    :json/node-cap-enforced?
+    :value/lazy-result-opaque?
+    :value/regex-result-opaque?
+    :value/instant-result-opaque?
+    :value/uuid-result-opaque?
+    :events/bounded?
+    :events/structured?
+    :project/normal-read?
+    :project/lexical-escape-denied?
+    :project/absolute-path-denied?
+    :project/directory-denied?
+    :project/symlink-escape-denied?
+    :project/invalid-utf8-denied?
+    :project/size-cap-enforced?}}
 
  :discoverability
  {:apropos-project-read true
   :doc-project-read true}
 
  :raw-local-evidence
- {:corpus-jvm-sha256 "0ec62c81e932a8431de5ea18ca3c7c676410fc9e9d125d64273e98b8e8cb056a"
-  :corpus-native-sha256 "d888dbb454308dba85e1d9905e3209ad989d4c1c7e7e42f73962dc7440bd2cfe"
-  :context-latency-native-sha256 "cc75e4197549c0086a3ee06e7da16b3b9ad4e2ee10eb33c65ee750db99f0c74e"
+ {:corpus-jvm-sha256 "d45aee44e2677e4071482323195cd97fff73f850e99587d19539e938bb8f3ff2"
+  :corpus-native-sha256 "ece445981e82dc08d533b9b72702f5550469dbd25d1f6258d7c0b8f34b0ade3f"
+  :context-latency-native-sha256 "3f45a27f1ae5865f8b008479ebf194f4e3d42c39b7fc15bee1b8a510b6da9ea0"
+  :build-log-sha256 "275f3466385210f0060af17cf89843970fad4f93ec44eeaf6a5d23f9d2d8a686"
+  :jvm-test-log-sha256 "67b3374287c4ad986480dfb9a019999184b7918cc913d575d3fd09c7df06737f"
+  :native-test-log-sha256 "6553c13a13410304be2e55ef221761b736a0f111ca8429a90c781f8d47066291"
   :note "Raw files contain ephemeral event IDs/timestamps and remain ignored local artifacts."}}
