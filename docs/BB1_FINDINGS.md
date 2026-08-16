@@ -1,7 +1,7 @@
 # BB1 Findings
 
-**Implementation coordinate:** `b9420f0a347dc64b0a10b880fbc9914f6de537a9`
-**Result:** Pass, proceed to fresh BB1 review
+**Implementation coordinate:** `455a91953b0e9f7e734073137abe7eda4158b73f`
+**Result:** Pass, independent fresh review accepted
 **Scope:** semantic capability restriction inside one pinned bb4t runtime
 
 ## Answer
@@ -19,11 +19,11 @@ raw slurp/process/JVM        no         no           no
 context construction API     no         no           no
 ```
 
-The executable JVM and native corpora agreed on all 51 cells: 12 allowed and 39
-denied. They also agreed on 32 packaged assurance checks covering malformed specs,
-authority widening, embedded provenance, direct dispatch, canonical data, bounded
-events, every implemented JSON bound, opaque value/handle projection, forged-handle
-rejection, and project-root containment.
+The normalized executable JVM and native corpora agreed on all 96 cells: 12 allowed
+and 84 denied. They also agreed on 36 packaged assurance checks covering malformed
+specs, authority widening, embedded provenance, direct dispatch, canonical data,
+bounded events, every implemented JSON bound, opaque value/handle projection,
+forged-handle rejection, and project-root containment.
 
 ## Implementation
 
@@ -57,17 +57,20 @@ catalogue is not an inventory of everything in the binary, and the presence of a
 stock namespace or class does not grant it to a bounded SCI context.
 
 The three profiles are additive fresh `sci/init` contexts. They never fork or reuse
-Babashka's normal unrestricted context. A positive symbol allowlist controls Vars.
-Pinned SCI also installs default JVM classes outside that allowlist, so BB1 supplies
-public `:classes` overrides with `{:class nil :closed true}` for all 18 defaults and
-an explicit interop deny set. Constructor and direct-method negative probes verify
-that boundary on JVM and native.
+Babashka's normal unrestricted context. A positive symbol allowlist controls built-in
+Vars. Pinned SCI exempts non-built-in Vars from that allow check, so BB1 explicitly
+denies the observed 18-Var implicit default surface, including both dotted and slash
+spellings for protocol maps, `*ns*`, reader state, and `clojure.walk/macroexpand-all`.
+BB1 also supplies public `:classes` overrides with `{:class nil :closed true}` for all
+18 default JVM classes and an explicit interop deny set. Data-driven default probes
+and constructor/method probes verify these boundaries on JVM and native.
 
 `project/read` receives no caller-selected filesystem root. A trusted runtime binds
 logical resource `:project/root`; ContextSpec can only request that logical binding.
 Reads traverse relative path components from an opened `SecureDirectoryStream`, use
 `NOFOLLOW_LINKS`, require a regular file, enforce a byte cap while reading, and
-strictly decode UTF-8. Filesystems without secure directory traversal fail closed.
+strictly decode UTF-8. Final and intermediate symlinks are denied. Filesystems
+without secure directory traversal fail closed.
 
 The application-facing host seam is deliberately small:
 
@@ -88,7 +91,15 @@ fetched source commit before the standalone jar and native executable are built.
 `runtime/create` does not accept a caller-supplied commit. Evaluation and direct
 operation invocation return bounded `ValueDescription` data: small canonical values
 may include inert data, large canonical values are summarized, and unsupported host
-objects expose only an opaque type name.
+objects or values beyond the description depth/node budget expose only an opaque type
+name. Direct host operations therefore summarize strings over 4,096 canonical
+characters rather than returning their content. Implementation exceptions are
+normalized to `:bb4t/error :operation-failed`; validation and authorization retain
+their specific categories.
+
+Event sequence allocation, bounded retention, and the exact dropped count share one
+atomic state transition, including under concurrent context evaluation. Subscriber
+callbacks remain best-effort diagnostic delivery rather than a durable ordered log.
 
 ## Public API Use
 
@@ -111,7 +122,7 @@ as an implementation API.
 ## Deterministic Coordinates
 
 ```text
-runtime  sha256:f52a3a6de14a47189df11eb8a4bfbefd9d10a21ac05be8cce2d9f0e920d31c1e
+runtime  sha256:38d8ba662b8f5ead2be1ec250ce2bda078deaf383b59b5f732631374b253dbbd
 catalog  sha256:41fb72e52a1082c26693349d610b5b8f8ae55e8441426662330d49c24ea9266b
 vector   sha256:2c1e6b7c6f844c15a7f6a67b0828b0fdc6d38c4fe6d436275bc802471c776d48
 ```
@@ -122,9 +133,11 @@ floating-point/ratio ambiguity, records, Vars, functions, Classes, atoms, lazy
 sequences, Paths, and other host objects.
 
 Map/set insertion order does not change coordinates. A changed effective grant or
-base authority policy does. Context coordinates exclude live SCI state, event data,
+base authority policy does. Host `*print-length*` and `*print-level*` bindings do not
+change coordinates. Context coordinates exclude live SCI state, event data,
 timestamps, and instance identity. An effective project-read coordinate intentionally
-includes the resolved authorized root because changing that root changes authority.
+includes the resolved authorized root because changing that root changes authority;
+that coordinate is consequently environment-specific rather than rebuild-stable.
 
 ## Native And JVM Evidence
 
@@ -139,13 +152,13 @@ payloads.
 Focused JVM tests:
 
 ```text
-15 tests, 112 assertions, 0 failures, 0 errors
+17 tests, 159 assertions, 0 failures, 0 errors
 ```
 
 Full native upstream plus BB1 main phase:
 
 ```text
-362 tests, 1092 assertions, 0 failures, 0 errors
+364 tests, 1139 assertions, 0 failures, 0 errors
 ```
 
 The remaining native phases also passed: flaky 15/23, preloads 1/1, preload
@@ -161,13 +174,13 @@ Against the recorded BB0 baseline:
 
 ```text
 BB0 binary             87,296,256 bytes
-BB1 binary             88,148,224 bytes
-delta                     851,968 bytes (+0.976%)
-BB1 SHA-256             61a10a558384c35e54a2b6bf3228d487ca5e02c9c7ea2fa0e6539ef181a841b4
+BB1 binary             88,213,760 bytes
+delta                     917,504 bytes (+1.051%)
+BB1 SHA-256             38f89f71cba03efebfa35564d8106cc5a03c506abb5db48926bf0401dc87abc6
 
 BB0 build wall             72.140 s
-BB1 build wall             82.540 s
-delta                      10.400 s (+14.42%)
+BB1 build wall             83.640 s
+delta                      11.500 s (+15.94%)
 ```
 
 The BB0 timing was measured on the host while BB1 used the pinned container, so the
@@ -177,9 +190,9 @@ Native context construction after five warmups, 30 samples per profile:
 
 ```text
 profile                 median       p95
-agent/minimal           0.144 ms    0.219 ms
-transform/pure          0.168 ms    0.213 ms
-agent/project-read      0.212 ms    0.274 ms
+agent/minimal           0.184 ms    0.188 ms
+transform/pure          0.215 ms    0.237 ms
+agent/project-read      0.282 ms    0.430 ms
 ```
 
 The catalog has 3 capabilities and 3 operations. Capability projections contain
@@ -187,10 +200,10 @@ The catalog has 3 capabilities and 3 operations. Capability projections contain
 the base `user` namespace with `apropos` and `doc`, total projected surface counts
 are 1/2, 2/4, and 3/5. No Java class is projected.
 
-From `bb4t/dev`, the measured BB1 coordinate changes 24 files with 2,494 insertions
-and 9 deletions across eleven commits. From the immutable BB0 tag, product-roadmap
-and BB1 work together change 29 files with 2,692 insertions and 82 deletions across
-twelve commits.
+From `bb4t/dev`, the measured BB1 coordinate changes 24 files with 2,721 insertions
+and 9 deletions across fourteen commits. From the immutable BB0 tag, product-roadmap
+and BB1 work together change 29 files with 2,919 insertions and 82 deletions across
+fifteen commits.
 
 Machine-readable values are in `artifacts/bb1-measurements.edn` and
 `artifacts/bb1-authority.edn`. Raw logs, corpora, measurements, and the binary remain
@@ -199,6 +212,14 @@ under ignored `.bb1-ci-artifacts/` locally.
 `PACKAGE_MANIFEST.json` remains the immutable bootstrap delivery manifest described
 by the BB0 provenance record. Its checksums intentionally describe the delivered
 starter package, not the current BB1 working tree.
+
+## Fresh Review
+
+Independent Kimi K3 runtime/authority and DeepSeek V4 Flash evidence reviews both
+returned `ACCEPT` for the final measured implementation and refreshed evidence. An
+initial Kimi review identified alternate slash spellings for four SCI protocol Vars;
+the measured implementation explicitly denies and probes both dotted and slash
+spellings across all profiles on JVM and native.
 
 ## Security And Isolation Limits
 
@@ -210,10 +231,18 @@ Specifically, BB1 does not establish:
 - an operating-system, process, container, or VM sandbox;
 - resistance to all SCI implementation defects;
 - isolation from host resources reachable through a future trusted implementation;
-- hostile concurrent filesystem mutation beyond secure relative traversal;
+- hostile concurrent filesystem mutation beyond secure relative traversal,
+  including replacement of the already-resolved project-root directory;
 - network, CPU, memory, deadline, or process isolation;
+- bounded stdout/stderr capture during evaluation;
 - authorization policy correctness beyond the trusted ContextSpec decision;
-- durable event integrity, confidentiality, or session replay.
+- durable event integrity, confidentiality, total subscriber ordering, or replay;
+- bit-for-bit rebuild reproducibility while apt and Maven/Clojars content remain
+  version-selected but not fully content-locked.
+
+The minimal profile deliberately omits general function construction and broad flow
+forms such as `fn`, `loop`, and `try`; later profile work must widen that surface
+explicitly rather than inheriting normal Clojure defaults.
 
 Hard isolation remains a later worker/SmolVM boundary. SCI is not described as a
 complete security sandbox.
@@ -226,10 +255,10 @@ complete security sandbox.
    unknown or widening inputs fail before context construction.
 4. **Canonical manifests free of live objects?** Yes, enforced by rejection tests.
 5. **Deterministic coordinates?** Yes for the defined canonical domain and vectors.
-6. **Native matches JVM?** Yes for the normalized 51-cell corpus and 32 checks.
-7. **Fork divergence?** 24 files, +2,494/-9 from `bb4t/dev` at the evidence commit.
+6. **Native matches JVM?** Yes for the normalized 96-cell corpus and 36 checks.
+7. **Fork divergence?** 24 files, +2,721/-9 from `bb4t/dev` at the evidence commit.
 8. **Claims not established?** OS/hostile-code isolation and the limits above.
-9. **Clean external-client seam?** Yes, subject to fresh review; façades return
-   bounded descriptions/data and do not expose mutable evaluator objects.
-10. **Proceed, revise, or stop?** Proceed to the fresh BB1 review gate. Do not start
-    bbagent until that review accepts or repairs this kernel.
+9. **Clean external-client seam?** Yes; fresh reviews accepted the façades, which
+   return bounded descriptions/data and do not expose mutable evaluator objects.
+10. **Proceed, revise, or stop?** Stop at the accepted BB1 gate as required by the
+    current scope. Do not start bbagent without a separately authorized scope.

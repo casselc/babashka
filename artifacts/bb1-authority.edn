@@ -1,34 +1,34 @@
 {:schema/version 1
- :implementation-commit "b9420f0a347dc64b0a10b880fbc9914f6de537a9"
+ :implementation-commit "455a91953b0e9f7e734073137abe7eda4158b73f"
 
  :coordinates
- {:runtime "sha256:f52a3a6de14a47189df11eb8a4bfbefd9d10a21ac05be8cce2d9f0e920d31c1e"
+ {:runtime "sha256:38d8ba662b8f5ead2be1ec250ce2bda078deaf383b59b5f732631374b253dbbd"
   :catalog "sha256:41fb72e52a1082c26693349d610b5b8f8ae55e8441426662330d49c24ea9266b"
   :canonical-test-vector "sha256:2c1e6b7c6f844c15a7f6a67b0828b0fdc6d38c4fe6d436275bc802471c776d48"
   :contexts
   {:agent/minimal
    {:context-spec "sha256:32906066a32169f44ca1c1c25581e8eec74a60b6bddb565b21bf14c3b5dc79bc"
-    :effective "sha256:a9f7b77b97058dfc32378f38f4b04d419b87e2129d0cf09b7f204580cb3c095f"}
+    :effective "sha256:ab6e1cfe8874af4e0072226b5d70781e1e4bff44a4b9e3fd7f6c7cb1d5873c5c"}
    :transform/pure
    {:context-spec "sha256:80794cbe814770e19d369ff9e2d9d2fb609ed2ca0fd091c803b316767edea86e"
-    :effective "sha256:29a3ff378cdfcfb7f7762a35a5192a23f25a5e006cacbb49cef8a3ec8f9f7cee"}
+    :effective "sha256:118805a0ce32d12bd16a1daf81e7ce729f7f1ec9fe8238635a2062562c909a7a"}
    :agent/project-read
    {:context-spec "sha256:56afcaaf18ea2ef16dbdf684bced9f45be2e93dc4a30e774ddab2f6f01297937"
-    :effective "sha256:5c50420ab03367d09be8817b03921c21670188d8b5a20a409b7b2b022257117c"
+    :effective "sha256:3ddb991f50f9f3e6a841a8702ca15d641ba0b62e9fec48bf529fa297da40be96"
     :note "Effective coordinate includes the real authorized project-root path used by this build."}}}
 
  :authority
  {:profiles [:agent/minimal :transform/pure :agent/project-read]
-  :cells 51
-  :expected {:allow 12 :deny 39}
-  :jvm {:pass 51 :fail 0}
-  :native {:pass 51 :fail 0}
+  :cells 96
+  :expected {:allow 12 :deny 84}
+  :jvm {:pass 96 :fail 0}
+  :native {:pass 96 :fail 0}
   :normalized-parity :equal}
 
  :assurance
- {:checks 32
-  :jvm-pass 32
-  :native-pass 32
+ {:checks 36
+  :jvm-pass 36
+  :native-pass 36
   :normalized-parity :equal
   :covered
   #{:spec/unknown-profile-fails?
@@ -44,6 +44,7 @@
     :handle/forged-context-denied?
     :runtime/authority-policy-recorded?
     :operation/direct-dispatch-denied?
+    :operation/host-error-normalized?
     :json/trailing-input-denied?
     :json/lazy-value-denied?
     :json/input-byte-cap-enforced?
@@ -54,13 +55,16 @@
     :value/regex-result-opaque?
     :value/instant-result-opaque?
     :value/uuid-result-opaque?
+    :value/deep-result-opaque?
     :events/bounded?
+    :events/dropped-exact?
     :events/structured?
     :project/normal-read?
     :project/lexical-escape-denied?
     :project/absolute-path-denied?
     :project/directory-denied?
     :project/symlink-escape-denied?
+    :project/intermediate-symlink-escape-denied?
     :project/invalid-utf8-denied?
     :project/size-cap-enforced?}}
 
@@ -69,10 +73,10 @@
   :doc-project-read true}
 
  :raw-local-evidence
- {:corpus-jvm-sha256 "54322f8307e11a9ca918edcd1febddae6addb929b3ea4ec486997bc6998b859b"
-  :corpus-native-sha256 "6f9bd8e8d70122bbeb4f031b4ec9e65d01acef9db8751e79afb306236aeabfd1"
-  :context-latency-native-sha256 "cc22303a1c5b2ee1f2fdeacfba46867e7302d496d1fb06978db0db702dea3d22"
-  :build-log-sha256 "6add02d0a6ece704f0650badc7196c9dcd322ca84e5199971aee161287499a9c"
-  :jvm-test-log-sha256 "6634f20982caf18455da145736c9306665375db656b602720f8fa6db566e97ae"
-  :native-test-log-sha256 "090dd66fcbfe5c5be2ab831cc0c908784d7adda465147d58bc7327e1b46d9647"
-  :note "Raw files contain ephemeral event IDs/timestamps and remain ignored local artifacts."}}
+ {:corpus-jvm-sha256 "cff01c8b9349a92df6d7721bfe59b2a9a3f4da308bea2b8f11b7b649f043a3e1"
+  :corpus-native-sha256 "a1c532c909f1d718fbbdcb636eba7267ff0cdd1c7a6d50e888ae2634a4569c67"
+  :context-latency-native-sha256 "5cc4ee5924ef01650404880a79db3b2040e88880f70a871ee4b7daaeaffe008c"
+  :build-log-sha256 "cc36160b27c1ff54165e8d9a19e5809145cc69073dded8d5f8c8543912c83a00"
+  :jvm-test-log-sha256 "127e8932b7fc7592673841270466d52c2d862cb560f36dd8115b7df91b5a10c0"
+  :native-test-log-sha256 "36b2c81dbf1c2e1e6abdcab67e6d21c7e76b2dfb877103b4a64ddc590d920c27"
+  :note "Raw corpus files contain ephemeral context instance IDs and remain ignored local artifacts."}}

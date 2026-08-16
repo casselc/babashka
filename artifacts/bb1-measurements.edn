@@ -2,8 +2,8 @@
 
  :source
  {:branch :bb4t/bb1
-  :implementation-commit "b9420f0a347dc64b0a10b880fbc9914f6de537a9"
-  :tree "ede31004d5313c8537fa630d80e9949bfcf63a26"
+  :implementation-commit "455a91953b0e9f7e734073137abe7eda4158b73f"
+  :tree "06d6696e09719e424cd490a61a971a1fc350b3d7"
   :upstream-commit "140ef9dcd770a54457a02fa29c3a2f643f4968d4"
   :sci-commit "64163c4560e085ffdcf47951b406f62f753b7f4c"}
 
@@ -15,7 +15,7 @@
  :build
  {:command ["docker" "build" "--platform" "linux/amd64"
             "--build-arg"
-            "BB1_COMMIT=b9420f0a347dc64b0a10b880fbc9914f6de537a9"
+            "BB1_COMMIT=455a91953b0e9f7e734073137abe7eda4158b73f"
             "--target" "artifacts" "--output"
             "type=local,dest=.bb1-ci-artifacts"
             "-f" "Dockerfile.bb1" "."]
@@ -24,32 +24,32 @@
                  :blob-filter :blob/none
                  :submodules :shallow-pinned}
   :measured-steps ["script/uberjar" "script/compile"]
-  :wall-ms 82540
-  :peak-rss-bytes 4825317376
+  :wall-ms 83640
+  :peak-rss-bytes 4705759232
   :result :pass
   :bb0-recorded-wall-ms 72140
-  :wall-delta-ms 10400
-  :wall-delta-percent 14.416412531189348
+  :wall-delta-ms 11500
+  :wall-delta-percent 15.94122539506515
   :comparison-note "BB0 was measured on the host and BB1 in the pinned container; treat the delta as directional."}
 
  :binary
- {:bytes 88148224
-  :sha256 "61a10a558384c35e54a2b6bf3228d487ca5e02c9c7ea2fa0e6539ef181a841b4"
+ {:bytes 88213760
+  :sha256 "38f89f71cba03efebfa35564d8106cc5a03c506abb5db48926bf0401dc87abc6"
   :format "ELF 64-bit LSB PIE, x86-64, dynamically linked, stripped"
   :dynamic-libraries ["libz.so.1" "libc.so.6"]
   :bb0-recorded-bytes 87296256
-  :byte-delta 851968
-  :byte-delta-percent 0.9759502171547884}
+  :byte-delta 917504
+  :byte-delta-percent 1.05102331078208}
 
  :context-construction-native
  {:clock :system/nano-time
   :warmup-per-profile 5
   :agent/minimal
-  {:samples 30 :min-ns 139013 :median-ns 143532 :p95-ns 219269 :max-ns 261763}
+  {:samples 30 :min-ns 179952 :median-ns 183699 :p95-ns 188318 :max-ns 188579}
   :transform/pure
-  {:samples 30 :min-ns 162779 :median-ns 168300 :p95-ns 213378 :max-ns 259799}
+  {:samples 30 :min-ns 208408 :median-ns 214530 :p95-ns 236563 :max-ns 300608}
   :agent/project-read
-  {:samples 30 :min-ns 202627 :median-ns 212496 :p95-ns 273776 :max-ns 279578}}
+  {:samples 30 :min-ns 268876 :median-ns 281571 :p95-ns 430381 :max-ns 436774}}
 
  :catalog
  {:capability-count 3
@@ -59,30 +59,30 @@
 
  :surface
  {:agent/minimal
-  {:allow-symbol-count 29 :deny-symbol-count 20
+  {:allow-symbol-count 29 :deny-symbol-count 42
    :base-namespace-count 1 :base-var-count 2
    :capability-namespace-count 0 :capability-var-count 0
    :total-namespace-count 1 :total-var-count 2 :projected-class-count 0}
   :transform/pure
-  {:allow-symbol-count 31 :deny-symbol-count 20
+  {:allow-symbol-count 31 :deny-symbol-count 42
    :base-namespace-count 1 :base-var-count 2
    :capability-namespace-count 1 :capability-var-count 2
    :total-namespace-count 2 :total-var-count 4 :projected-class-count 0}
   :agent/project-read
-  {:allow-symbol-count 32 :deny-symbol-count 20
+  {:allow-symbol-count 32 :deny-symbol-count 42
    :base-namespace-count 1 :base-var-count 2
    :capability-namespace-count 2 :capability-var-count 3
    :total-namespace-count 3 :total-var-count 5 :projected-class-count 0}
   :closed-sci-default-class-count 18}
 
  :tests
- {:authority-cells 51
+ {:authority-cells 96
   :authority-allow-cells 12
-  :authority-deny-cells 39
-  :packaged-assurance-checks 32
+  :authority-deny-cells 84
+  :packaged-assurance-checks 36
   :jvm-native-parity :equal
-  :focused-jvm {:tests 15 :assertions 112 :failures 0 :errors 0}
-  :native-main {:tests 362 :assertions 1092 :failures 0 :errors 0}
+  :focused-jvm {:tests 17 :assertions 159 :failures 0 :errors 0}
+  :native-main {:tests 364 :assertions 1139 :failures 0 :errors 0}
   :native-flaky {:tests 15 :assertions 23 :failures 0 :errors 0}
   :native-additional-phases
   [{:name :preloads :tests 1 :assertions 1 :failures 0 :errors 0}
@@ -92,6 +92,6 @@
    {:name :socket-repl :tests 3 :assertions 18 :failures 0 :errors 0}]}
 
  :upstream-diff
- {:from-product-dev {:files 24 :insertions 2494 :deletions 9 :commits 11}
-  :from-bb0-tag {:files 29 :insertions 2692 :deletions 82 :commits 12}
-  :from-upstream-release {:files 45 :insertions 4401 :deletions 3 :commits 16}}}
+ {:from-product-dev {:files 24 :insertions 2721 :deletions 9 :commits 14}
+  :from-bb0-tag {:files 29 :insertions 2919 :deletions 82 :commits 15}
+  :from-upstream-release {:files 45 :insertions 4628 :deletions 3 :commits 19}}}
