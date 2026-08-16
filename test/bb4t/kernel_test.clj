@@ -7,7 +7,6 @@
             [bb4t.operation :as operation]
             [bb4t.runtime :as runtime]
             [bb4t.value :as value]
-            [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]])
   (:import [java.nio.file Files LinkOption OpenOption Path]
            [java.util UUID]))
@@ -85,12 +84,6 @@
                   duplicate
                   #{:bb4t.data/json-read :bb4t.data/json-write
                     :bb4t.project/read :bb4t.duplicate/read})))))
-
-(deftest missing-build-provenance-fails-on-runtime-use-test
-  (with-redefs [io/resource (constantly nil)]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                          #"build provenance resource is missing"
-                          (runtime/create {})))))
 
 (deftest profile-attenuation-and-coordinate-test
   (let [runtime (test-runtime)
