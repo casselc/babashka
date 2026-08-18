@@ -128,6 +128,7 @@
                            :resource-paths ["../bbagent/resources"]
                            :dependencies [[com.github.seancorfield/next.jdbc "1.3.1118"]
                                           [org.xerial/sqlite-jdbc "3.53.2.1"]]
+                           :manifest {"Multi-Release" "true"}
                            :main bbagent.core
                            :aot [bbagent.core]}
              :reflection {:main babashka.impl.classes/generate-reflection-file}}
