@@ -126,6 +126,8 @@
                        :aot [babashka.main]}
              :app/bbagent {:source-paths ["../bbagent/src"]
                            :resource-paths ["../bbagent/resources"]
+                           :dependencies [[com.github.seancorfield/next.jdbc "1.3.1118"]
+                                          [org.xerial/sqlite-jdbc "3.53.2.1"]]
                            :main bbagent.core
                            :aot [bbagent.core]}
              :reflection {:main babashka.impl.classes/generate-reflection-file}}

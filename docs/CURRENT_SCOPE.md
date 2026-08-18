@@ -1,62 +1,50 @@
 # Current Scope
 
-**Active milestone:** BB1 - bounded declarative SCI contexts.
+**Active milestone:** S0a - bbagent custom native SQLite inclusion spike.
 
 ## Purpose
 
 Answer one question:
 
-> Can one pinned native bb4t binary construct multiple declaratively specified SCI
-> contexts with materially different, fail-closed authority surfaces?
+> Can the custom bb4t + bbagent native application include and reliably use a
+> JNI-backed SQLite driver while bounded BB1 SCI authority remains unchanged?
 
-BB1 demonstrates semantic capability restriction within the runtime. It does not
-prove hostile-code filesystem or process isolation.
+The accepted BB1 result remains frozen at `bb4t-bb1`. S0a changes only the
+application-specific native build profile and must not reinterpret BB1 evidence or
+RuntimeManifest semantics.
 
 ## Owned Work
 
-- data-only `RuntimeManifest`, `CapabilityCatalog`, `CapabilitySpec`, and
-  `ContextSpec` descriptions;
-- a separate trusted implementation registry and live `Context` objects;
-- explicit `SemanticOperation` dispatch;
-- deterministic canonicalization and SHA-256 coordinates;
-- fresh SCI contexts built additively from a minimal safe base;
-- profiles `:agent/minimal`, `:transform/pure`, and `:agent/project-read`;
-- one root-contained, read-only `project/read` semantic capability;
-- a small application-facing describe/create/invoke/events seam;
-- structured in-memory operation events, not a durable journal;
-- positive and negative authority tests on JVM and native paths;
-- BB1 measurements, machine-readable evidence, and findings.
+- add pinned `next.jdbc` and `sqlite-jdbc` dependencies only to `:app/bbagent`;
+- preserve ordinary bb4t dependency and SCI surfaces;
+- preserve the existing BB1 catalog, ContextSpec, runtime, and operation semantics;
+- build and measure an exported sqlitejdbc sidecar with the bbagent executable;
+- record separate source, dependency, toolchain, executable, and sidecar evidence.
 
 ## Required Outputs
 
-- BB1 runtime/catalog/context/operation/event code;
-- executable canonicalization and authority test vectors;
-- `artifacts/bb1-*.edn` evidence;
-- `docs/BB1_FINDINGS.md` with a proceed, revise, or stop recommendation;
-- a fresh review of authority attenuation, fail-closed behavior, canonical/live
-  separation, deterministic coordinates, native parity, fork debt, and client seam.
+- a source-pinned bbagent application image and sqlitejdbc sidecar;
+- JVM and native SQLite smoke evidence;
+- unchanged-authority evidence using the actual bounded A0 Context;
+- `docs/S0A_SQLITE_NATIVE_BUILD.md` with the bb4t-side result and limitations.
 
 ## Dependencies And References
 
-- immutable BB0 coordinate `bb4t-bb0`;
-- Babashka `v1.13.219`, commit
-  `140ef9dcd770a54457a02fa29c3a2f643f4968d4`;
-- SCI commit `64163c4560e085ffdcf47951b406f62f753b7f4c`;
-- `docs/VISION.md`, `docs/ROADMAP.md`, and ADRs under `docs/architecture/`;
-- only libraries already present in the BB0 compiled runtime.
+- immutable BB1 coordinate `bb4t-bb1`;
+- immutable A0 application hook coordinate `bb4t-a0`;
+- pinned bbagent source selected by its application build wrapper;
+- `next.jdbc` `1.3.1118` and `sqlite-jdbc` `3.53.2.1`.
 
 ## Explicit Exclusions
 
-- no changes to the original Track A experiment;
-- no bbagent application or TUI;
-- no durable session journal, resume, memory, skills, model loop, or routing;
-- no runtime slimming, build profiles, or library replacement;
-- no new Geschichte, Datahike, Chiasmus, Cedar, Charm, or other runtime dependency;
-- no SmolVM, worker, filesystem/process sandbox, or hostile-code isolation claim;
-- no HTTP, MCP, A2A, ACP, Web UI, or generalized projection framework;
-- no BB2 or later milestone work.
+- no changes to Track A, BB0, BB1, or A0 evidence history;
+- no SQLite, JDBC, or next.jdbc namespace/class/operation in bounded SCI;
+- no changes to bb4t runtime, context, catalog, kernel, or semantic operations;
+- no generalized BB2 build-profile or BuildManifest implementation;
+- no static SQLite linkage or cross-platform packaging claim;
+- no bbagent journal migration, TUI, memory, search, editing, process, or multi-agent work.
 
 ## Stop Gate
 
-Stop after BB1 findings and fresh review. Repair BB1 if the semantic kernel is not
-clean enough for an external bbagent client; do not build bbagent during this scope.
+Stop after source-pinned native evidence and review. Do not begin bbagent storage
+integration automatically.
