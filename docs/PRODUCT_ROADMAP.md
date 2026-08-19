@@ -8,17 +8,19 @@ and policy coordinates for each run.
 ## Product Sequence
 
 ```text
-BB0   pinned native baseline
+BB0   pinned native baseline                                          PASS
   |
-BB1   RuntimeManifest + CapabilityCatalog + ContextSpec + bounded SCI contexts
+BB1   RuntimeManifest + CapabilityCatalog + ContextSpec + bounded SCI PASS
   |
-A0    separate bbagent skeleton and smallest single-agent harness
+A0    separate bbagent skeleton and smallest single-agent harness     PASS
   |
-A1    native TUI + REPL + structured event inspection
+S0a   custom native SQLite/JNI application image                      PASS
+  |
+S0b   SQLite durable event/CAS store                                  PASS
+  |
+A1    native TUI + REPL + structured event inspection                 ACTIVE
   |
 A2    useful single-agent coding loop
-  |
-A3    durable session journal + resume
   |
 A4    richer project capabilities
   |
@@ -26,6 +28,11 @@ A5    context compiler + explicit memory
   |
 A6    work/issues + skills + model routing
 ```
+
+A3's durable session journal and resume were delivered early inside A0 and hardened
+by S0a/S0b, so the storage sequence is recorded above as S0a/S0b rather than as a
+later A3. Frozen milestone coordinates live in the bbagent repository at
+`docs/S0_CLOSURE.md`; `bb4t-s0a` names the accepted bb4t custom-image tip.
 
 `bb4t` provides execution: the compiled capability universe, declarative bounded
 contexts, semantic operation dispatch, runtime coordinates, and low-level runtime

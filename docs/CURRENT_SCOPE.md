@@ -1,50 +1,52 @@
 # Current Scope
 
-**Active milestone:** S0a - bbagent custom native SQLite inclusion spike.
+**Active milestone:** A1 - bbagent native dogfood TUI (bbagent-owned).
+
+**Milestone status:** BB0 PASS, BB1 PASS, A0 PASS, S0a PASS, S0b PASS, A1 ACTIVE.
 
 ## Purpose
 
-Answer one question:
+S0a is complete, accepted, and frozen at `bb4t-s0a`. Its result is integrated into
+`bb4t/dev` by fast-forward and recorded in `docs/S0A_SQLITE_NATIVE_BUILD.md`. The
+accepted design stands: the ordinary bb4t build does **not** include SQLite merely
+because bbagent does, and the pinned `next.jdbc` and `sqlite-jdbc` dependencies plus
+the native sqlitejdbc sidecar remain confined to the inactive-by-default
+`:app/bbagent` application profile.
 
-> Can the custom bb4t + bbagent native application include and reliably use a
-> JNI-backed SQLite driver while bounded BB1 SCI authority remains unchanged?
-
-The accepted BB1 result remains frozen at `bb4t-bb1`. S0a changes only the
-application-specific native build profile and must not reinterpret BB1 evidence or
-RuntimeManifest semantics.
+A1 is owned by the separate `bbagent` repository. bb4t's role is limited to hosting
+the application build profile. The accepted BB1 result remains frozen at `bb4t-bb1`
+and the A0 application hook at `bb4t-a0`.
 
 ## Owned Work
 
-- add pinned `next.jdbc` and `sqlite-jdbc` dependencies only to `:app/bbagent`;
-- preserve ordinary bb4t dependency and SCI surfaces;
-- preserve the existing BB1 catalog, ContextSpec, runtime, and operation semantics;
-- build and measure an exported sqlitejdbc sidecar with the bbagent executable;
-- record separate source, dependency, toolchain, executable, and sidecar evidence.
+- keep `:app/bbagent` the single application-specific build seam;
+- add a pinned TUI dependency to `:app/bbagent` only if the A1 runtime spike selects
+  a library rather than vendored source, together with any reachability metadata the
+  native proof actually requires;
+- preserve ordinary bb4t dependency and SCI surfaces unchanged.
 
-## Required Outputs
+## Explicit Exclusions
 
-- a source-pinned bbagent application image and sqlitejdbc sidecar;
-- JVM and native SQLite smoke evidence;
-- unchanged-authority evidence using the actual bounded A0 Context;
-- `docs/S0A_SQLITE_NATIVE_BUILD.md` with the bb4t-side result and limitations.
+- no changes to Track A, BB0, BB1, A0, or S0a evidence history;
+- no runtime, context, catalog, kernel, or semantic operation changes;
+- no new capability, ContextSpec, profile, or SCI projection;
+- no TUI, JLine, Charm, SQLite, JDBC, or next.jdbc namespace, class, or operation in
+  bounded SCI;
+- no generalized BB2 build-profile or BuildManifest implementation;
+- no generalized production/developer/evidence/worker profile split, which remains
+  deferred BB2 work.
 
 ## Dependencies And References
 
 - immutable BB1 coordinate `bb4t-bb1`;
 - immutable A0 application hook coordinate `bb4t-a0`;
-- pinned bbagent source selected by its application build wrapper;
-- `next.jdbc` `1.3.1118` and `sqlite-jdbc` `3.53.2.1`.
-
-## Explicit Exclusions
-
-- no changes to Track A, BB0, BB1, or A0 evidence history;
-- no SQLite, JDBC, or next.jdbc namespace/class/operation in bounded SCI;
-- no changes to bb4t runtime, context, catalog, kernel, or semantic operations;
-- no generalized BB2 build-profile or BuildManifest implementation;
-- no static SQLite linkage or cross-platform packaging claim;
-- no bbagent journal migration, TUI, memory, search, editing, process, or multi-agent work.
+- immutable S0a coordinate `bb4t-s0a`, implementation
+  `f438307280b7a01fd20e99f54cd82682ef15d12a`;
+- `next.jdbc` `1.3.1118` and `sqlite-jdbc` `3.53.2.1`;
+- JLine `4.3.1`, already built with `-H:+ForeignAPISupport`,
+  `-H:+SharedArenaSupport`, and `--enable-preview`.
 
 ## Stop Gate
 
-Stop after source-pinned native evidence and review. Do not begin bbagent storage
-integration automatically.
+Any bb4t change requested by A1 must be independently reviewable and must prove its
+authority surface. TUI convenience does not justify widening model-facing authority.
