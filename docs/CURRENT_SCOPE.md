@@ -1,8 +1,9 @@
 # Current Scope
 
-**Active milestone:** A1 - bbagent native dogfood TUI (bbagent-owned).
+**Active milestone:** A1.1 - model capability orientation (bbagent-owned).
 
-**Milestone status:** BB0 PASS, BB1 PASS, A0 PASS, S0a PASS, S0b PASS, A1 ACTIVE.
+**Milestone status:** BB0 PASS, BB1 PASS, A0 PASS, S0a PASS, S0b PASS, A1 PASS,
+A1.1 ACTIVE.
 
 ## Purpose
 
@@ -13,8 +14,12 @@ because bbagent does, and the pinned `next.jdbc` and `sqlite-jdbc` dependencies 
 the native sqlitejdbc sidecar remain confined to the inactive-by-default
 `:app/bbagent` application profile.
 
-A1 is owned by the separate `bbagent` repository. bb4t's role is limited to hosting
-the application build profile. The accepted BB1 result remains frozen at `bb4t-bb1`
+A1 is complete; `:app/bbagent` gained one pinned dependency, `charm.clj 0.2.74`,
+and nothing else changed. A1.1 is owned by the separate `bbagent` repository and
+is expected to need **no bb4t change at all**: it derives model orientation from
+the existing RuntimeCatalog and Context description rather than adding
+capability. bb4t's role remains limited to hosting the application build
+profile. The accepted BB1 result remains frozen at `bb4t-bb1`
 and the A0 application hook at `bb4t-a0`.
 
 ## Owned Work

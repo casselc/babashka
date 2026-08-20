@@ -18,7 +18,9 @@ S0a   custom native SQLite/JNI application image                      PASS
   |
 S0b   SQLite durable event/CAS store                                  PASS
   |
-A1    native TUI + REPL + structured event inspection                 ACTIVE
+A1    native TUI + REPL + structured event inspection                 PASS
+  |
+A1.1  model capability orientation                                    ACTIVE
   |
 A2    useful single-agent coding loop
   |
