@@ -127,7 +127,11 @@
              :app/bbagent {:source-paths ["../bbagent/src"]
                            :resource-paths ["../bbagent/resources"]
                            :dependencies [[com.github.seancorfield/next.jdbc "1.3.1118"]
-                                          [org.xerial/sqlite-jdbc "3.53.2.1"]]
+                                          [org.xerial/sqlite-jdbc "3.53.2.1"]
+                                          ;; A1 TUI. Targets the JLine and
+                                          ;; core.async versions above; adds no
+                                          ;; model-facing authority.
+                                          [de.timokramer/charm.clj "0.2.74"]]
                            :manifest {"Multi-Release" "true"}
                            :main bbagent.core
                            :aot [bbagent.core]}
