@@ -134,7 +134,7 @@
     (context/evaluate minimal "(def private-value 1)")
     (is (thrown? Throwable
                  (context/evaluate equivalent "private-value")))
-    (is (thrown? Throwable (context/evaluate minimal "(inc 1)")))
+    (is (thrown? Throwable (context/evaluate minimal "(bit-and 3 1)")))
     (is (thrown? Throwable (context/evaluate minimal "(String. \"x\")")))
     (is (thrown? Throwable (context/evaluate minimal "(.getClass \"x\")")))))
 
@@ -152,7 +152,9 @@
   (let [baseline-runtime (test-runtime)
         baseline-context (context/create baseline-runtime
                                          {:profile :agent/minimal})
-        widened (with-redefs [catalog/base-allow (conj catalog/base-allow 'inc)]
+        ;; Must be a symbol base-allow does not already contain, or `conj`
+        ;; is a no-op and the coordinates legitimately match.
+        widened (with-redefs [catalog/base-allow (conj catalog/base-allow 'bit-and)]
                   (let [runtime (test-runtime)]
                     {:runtime (runtime/describe runtime)
                      :context (context/describe

@@ -103,8 +103,57 @@
    :project/list {:limits #{:project/list-max-entries}}})
 
 (def base-allow
-  '#{* + - / = apropos assoc count conj def do doc first get hash-map hash-set
-     if into let let* list map println quote range reduce rest str vector})
+  "The pure Clojure vocabulary a bounded context may use.
+
+  A0 shipped 26 symbols, which was enough to call an operation and print the
+  result. The A2 dogfood showed the cost: the model had no `fn`, no `defn`, no
+  `take`, and no `subs`, so it could neither write a helper nor look at part of
+  a value, and it spent most of a turn trying to work around that. The product
+  thesis is that the agent composes task-specific vocabulary out of authorized
+  primitives; that is not possible without the base language.
+
+  Every symbol here is pure: it computes over inert values and reaches nothing.
+  Nothing that performs IO, resolves a Var by name, evaluates data as code,
+  touches a host class, mutates state, or reads the environment belongs in this
+  set. Authority still comes only from projected capability operations, and the
+  authority corpus is the check on that."
+  '#{;; special forms and binding
+     def do fn fn* if let let* letfn quote recur
+     ;; definition and threading macros
+     defn defn- -> ->> as-> cond cond-> cond->> condp if-let if-not if-some
+     some-> some->> when when-first when-let when-not when-some
+     ;; logic and comparison
+     = not= not and or < <= > >= compare
+     ;; arithmetic
+     * + - / abs dec inc max min mod quot rem
+     even? odd? neg? pos? zero?
+     ;; predicates
+     boolean? char? coll? contains? empty? every? fn? integer? keyword? map?
+     nil? number? seq? sequential? set? some some? string? symbol? vector?
+     ;; construction
+     hash-map hash-set list list* set vec vector zipmap
+     ;; access and update
+     assoc assoc-in dissoc get get-in update update-in merge merge-with
+     select-keys keys vals find key val
+     ;; sequences
+     concat conj cons count distinct drop drop-last drop-while filter filterv
+     first flatten frequencies group-by interleave interpose into juxt last
+     map mapcat mapv nth partition partition-all peek pop range reduce
+     reduce-kv remove rest reverse second seq sort sort-by split-at take
+     take-last take-while
+     ;; functional
+     apply comp complement constantly identity partial
+     ;; strings and naming
+     format name namespace pr-str str subs symbol keyword
+     clojure.string/blank? clojure.string/capitalize clojure.string/ends-with?
+     clojure.string/escape clojure.string/includes? clojure.string/index-of
+     clojure.string/join clojure.string/last-index-of clojure.string/lower-case
+     clojure.string/replace clojure.string/replace-first clojure.string/reverse
+     clojure.string/split clojure.string/split-lines clojure.string/starts-with?
+     clojure.string/trim clojure.string/trim-newline clojure.string/triml
+     clojure.string/trimr clojure.string/upper-case
+     ;; discovery and output
+     apropos doc println})
 
 (def implicit-default-deny
   '#{*ns* *read-eval* *data-readers* *default-data-reader-fn*

@@ -50,8 +50,12 @@
     :expected {:agent/minimal :deny
                :transform/pure :deny
                :agent/project-read :deny}}
-   {:case/id :core/unlisted-inc
-    :source "(inc 1)"
+   ;; The invariant is that an unlisted core symbol is denied, not that any
+   ;; particular symbol stays unlisted. A2 added `inc` to base-allow, so the
+   ;; probe moved to a symbol that is pure, ordinary, and deliberately still
+   ;; unlisted -- keeping the case about listing rather than about effects.
+   {:case/id :core/unlisted-core-symbol
+    :source "(bit-and 3 1)"
     :expected {:agent/minimal :deny
                :transform/pure :deny
                :agent/project-read :deny}}
