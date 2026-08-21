@@ -386,6 +386,184 @@
         root (.relativize root lexical-target)
         (get-in effective [:context/limits :project/read-max-bytes]))))))
 
+(def ^:private max-search-pattern-characters 200)
+(def ^:private max-search-line-characters 300)
+(def ^:private search-match-budget
+  "Character reads one line may cost the regex engine.
+
+  Measured rather than assumed: Java's matcher does not blow up exponentially
+  on the textbook cases -- (a+)+$ against n a's costs O(n^2) reads, 41k at
+  n=200 and 1.0M at n=1000, not 2^n. So this is not a defence against
+  exponential backtracking, which the engine already avoids. It bounds the
+  superlinear case: one long line and a nested quantifier can still burn real
+  CPU, and a file full of such lines multiplies it. The matcher reads each
+  line through a counting CharSequence and fails past this bound, so search
+  cost stays a function of project size rather than of pattern cleverness."
+  200000)
+
+(defn- budgeted-sequence [^CharSequence source budget]
+  (let [remaining (long-array 1 budget)]
+    (reify CharSequence
+      (charAt [_ index]
+        (when (neg? (aset remaining 0 (dec (aget remaining 0))))
+          (fail! "project/search pattern exceeded its matching budget"
+                 {:budget budget}))
+        (.charAt source index))
+      (length [_] (.length source))
+      (subSequence [_ start end] (.subSequence source start end))
+      (toString [_] (.toString source)))))
+
+(defn- search-line? [^java.util.regex.Pattern pattern ^String line]
+  (.find (.matcher pattern (budgeted-sequence line search-match-budget))))
+
+(defn- decode-utf8-or-nil
+  "nil for anything that is not valid UTF-8, which is how a binary file is
+   recognized without guessing from its name."
+  [bytes]
+  (try
+    (let [decoder (doto (.newDecoder StandardCharsets/UTF_8)
+                    (.onMalformedInput CodingErrorAction/REPORT)
+                    (.onUnmappableCharacter CodingErrorAction/REPORT))]
+      (str (.decode decoder (ByteBuffer/wrap bytes))))
+    (catch Throwable _ nil)))
+
+(defn- search-file!
+  [^SecureDirectoryStream directory ^Path name-path relative-path pattern
+   state {:keys [max-results max-file-bytes]}]
+  (let [content (try
+                  (with-open [^SeekableByteChannel channel
+                              (.newByteChannel
+                               directory name-path
+                               #{StandardOpenOption/READ LinkOption/NOFOLLOW_LINKS}
+                               (make-array FileAttribute 0))]
+                    (decode-utf8-or-nil
+                     (read-bounded-channel channel max-file-bytes)))
+                  ;; A file larger than the per-file bound is skipped rather
+                  ;; than failing the whole search, which would make one big
+                  ;; artefact hide every other match.
+                  (catch clojure.lang.ExceptionInfo _ nil))]
+    (when content
+      (loop [[line & more] (str/split content #"\n" -1)
+             number 1]
+        (when (and line (< (count (:results @state)) max-results))
+          (when (search-line? pattern line)
+            (swap! state update :results conj
+                   {:path relative-path
+                    :line number
+                    :text (let [trimmed (str/trim line)]
+                            (if (> (count trimmed) max-search-line-characters)
+                              (str (subs trimmed 0 max-search-line-characters) "...")
+                              trimmed))}))
+          (recur more (inc number)))))))
+
+(defn- search-directory!
+  [^SecureDirectoryStream directory prefix pattern state
+   {:keys [max-results max-files include-hidden?] :as options}]
+  (let [entries (vec (iterator-seq (.iterator directory)))]
+    (doseq [^Path entry (sort-by str entries)
+            :while (< (count (:results @state)) max-results)]
+      (let [^Path name-path (.getFileName entry)
+            entry-name (str name-path)
+            relative (if (str/blank? prefix)
+                       entry-name
+                       (str prefix "/" entry-name))]
+        (when (or include-hidden? (not (str/starts-with? entry-name ".")))
+          (let [^BasicFileAttributeView view
+                (.getFileAttributeView
+                 directory name-path BasicFileAttributeView
+                 (into-array LinkOption [LinkOption/NOFOLLOW_LINKS]))
+                ^BasicFileAttributes attributes (.readAttributes view)]
+            (cond
+              ;; Never followed, exactly as in project/list, so a search
+              ;; cannot be steered out of the authorized root.
+              (.isSymbolicLink attributes) nil
+
+              (.isDirectory attributes)
+              (with-open [^SecureDirectoryStream child
+                          (.newDirectoryStream
+                           directory name-path
+                           (into-array LinkOption [LinkOption/NOFOLLOW_LINKS]))]
+                (search-directory! child relative pattern state options))
+
+              (.isRegularFile attributes)
+              (do
+                (when (>= (:files @state) max-files)
+                  (fail! "project/search exceeded its file limit"
+                         {:limit max-files}))
+                (swap! state update :files inc)
+                (search-file! directory name-path relative pattern state
+                              options))
+
+              :else nil)))))))
+
+(defn- project-search [runtime effective [pattern-string options :as args]]
+  (when-not (and (<= 1 (count args) 2)
+                 (string? pattern-string)
+                 (not (str/blank? pattern-string))
+                 (<= (count pattern-string) max-search-pattern-characters)
+                 (or (nil? options) (map? options)))
+    (fail! "project/search expects a bounded pattern and an optional options map"
+           {:operation/id :project/search}))
+  (let [{:keys [path include-hidden?]} options
+        path (or path ".")]
+    (when-not (and (string? path) (not (str/blank? path))
+                   (<= (count path) 4096))
+      (fail! "project/search :path must be a bounded relative path" {}))
+    (let [resource-id (get-in effective [:context/resources :project :resource/id])
+          ^Path root (get (:resources runtime) resource-id)
+          supplied (Paths/get path (make-array String 0))]
+      (when (.isAbsolute supplied)
+        (fail! "project/search rejects absolute paths" {:path path}))
+      (let [lexical-target (.normalize (.resolve root supplied))]
+        (when-not (.startsWith lexical-target root)
+          (fail! "project/search path escapes the authorized root" {:path path}))
+        (let [pattern (try
+                        (java.util.regex.Pattern/compile pattern-string)
+                        (catch java.util.regex.PatternSyntaxException _
+                          (fail! "project/search pattern is not a valid regex"
+                                 {:pattern pattern-string})))
+              limits (:context/limits effective)
+              options {:max-results (:project/search-max-results limits)
+                       :max-files (:project/search-max-files limits)
+                       :max-file-bytes (:project/read-max-bytes limits)
+                       :include-hidden? (true? include-hidden?)}
+              state (atom {:results [] :files 0})
+              relative-target (.relativize root lexical-target)
+              components (into []
+                               (comp (map #(.getName relative-target %))
+                                     (remove #(str/blank? (str %))))
+                               (range (.getNameCount relative-target)))
+              opened (atom [])]
+          (try
+            (let [root-directory (Files/newDirectoryStream root)]
+              (swap! opened conj root-directory)
+              (when-not (instance? SecureDirectoryStream root-directory)
+                (fail! "Filesystem cannot provide secure project traversal"
+                       {:filesystem/feature :secure-directory-stream}))
+              (loop [^SecureDirectoryStream directory root-directory
+                     [component & more] components]
+                (if component
+                  (let [^SecureDirectoryStream child
+                        (try
+                          (.newDirectoryStream
+                           directory component
+                           (into-array LinkOption [LinkOption/NOFOLLOW_LINKS]))
+                          (catch java.nio.file.NotDirectoryException _
+                            (fail! "project/search :path is not a directory" {}))
+                          (catch java.nio.file.NoSuchFileException _
+                            (fail! "project/search :path does not exist" {}))
+                          (catch java.nio.file.FileSystemException _
+                            (fail! "project/search will not follow a symbolic link"
+                                   {})))]
+                    (swap! opened conj child)
+                    (recur child more))
+                  (do (search-directory! directory
+                                         (str (.relativize root lexical-target))
+                                         pattern state options)
+                      (:results @state)))))
+            (finally
+              (close-directories! @opened))))))))
+
 (defn- project-list [runtime effective [relative-path :as args]]
   (when-not (and (= 1 (count args))
                  (string? relative-path)
@@ -412,7 +590,8 @@
   {:bb4t.data/json-read (fn [_runtime _effective args] (json-read args))
    :bb4t.data/json-write (fn [_runtime _effective args] (json-write args))
    :bb4t.project/read project-read
-   :bb4t.project/list project-list})
+   :bb4t.project/list project-list
+   :bb4t.project/search project-search})
 
 (defn- timestamp []
   (str (Instant/now)))
@@ -741,6 +920,16 @@
               namespaces)
         sci-context (sci/init {:namespaces sci-namespaces
                                :allow allow
+                               ;; str/ is how Clojure is written, and the
+                               ;; bounded context has no require or alias with
+                               ;; which to establish it. Without this the
+                               ;; caller reaches clojure.string only by its
+                               ;; full name, which the A2 dogfood showed the
+                               ;; model getting wrong on its first attempt.
+                               ;; An alias renames access to vars that are
+                               ;; already allowed; it grants nothing, which
+                               ;; the authority corpus checks.
+                               :ns-aliases catalog/base-ns-aliases
                                :deny catalog/base-deny
                                :classes catalog/closed-default-classes
                                :unrestricted false})
@@ -795,11 +984,17 @@
       (let [out (StringWriter.)
             err (StringWriter.)]
         (try
-          (let [value (sci/binding [sci/out out sci/err err]
-                        (sci/eval-string* (:sci-context context) source))]
+          (let [{:keys [value origin]}
+                (sci/binding [sci/out out sci/err err]
+                  ;; Realized here, not at description time: forcing runs the
+                  ;; sequence's own computation, which belongs inside the
+                  ;; out/err capture and before the success event.
+                  (value/realize
+                   (sci/eval-string* (:sci-context context) source)))]
             (emit! (:runtime context) (:coordinate context) (:instance-id context)
                    :context/evaluated {:status :ok})
-            {:value (value/describe value) :out (str out) :err (str err)})
+            {:value (value/describe value origin)
+             :out (str out) :err (str err)})
           (catch Throwable error
             (emit! (:runtime context) (:coordinate context) (:instance-id context)
                    :context/evaluation-failed

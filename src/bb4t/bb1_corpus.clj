@@ -445,9 +445,24 @@
         (validation-failure?
          #(operation/invoke pure :data.json/write
                             [(vec (repeat 10000 nil))]))
-        :value/lazy-result-opaque?
-        (= {:value/kind :opaque :value/type "clojure.lang.LazySeq"}
+        ;; A2 replaced lazy-result-opaque?. Describing every lazy sequence as
+        ;; opaque made the expanded pure vocabulary unusable -- map, filter and
+        ;; take all return one, so the caller could compose and then not see
+        ;; what it had composed. The property that mattered is preserved and
+        ;; sharpened: realization happens during evaluation, is bounded, and
+        ;; reports the sequence it came from. Host objects stay opaque, which
+        ;; the neighbouring properties check.
+        :value/lazy-result-realized-as-data?
+        (= {:value/kind :inert-data
+            :value/data ["1" "2"]
+            :value/type "clojure.lang.LazySeq"}
            (:value (context/evaluate minimal "(map str [1 2])")))
+        :value/lazy-result-bounded?
+        (let [described (:value (context/evaluate
+                                 minimal "(map str (range 100000))"))]
+          (and (= :inert-data (:value/kind described))
+               (true? (:value/truncated? described))
+               (= "clojure.lang.LazySeq" (:value/type described))))
         :value/regex-result-opaque?
         (= {:value/kind :opaque :value/type "java.util.regex.Pattern"}
            (:value (context/evaluate minimal "#\"x\"")))

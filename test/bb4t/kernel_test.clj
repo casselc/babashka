@@ -323,8 +323,17 @@
     (is (= :opaque (:value/kind (value/describe runtime))))
     (is (= :opaque
            (:value/kind (value/describe (nth (iterate vector nil) 65)))))
-    (doseq [source ["(map str [1 2])"
-                    "#\"x\""
+    (testing "a lazy result is realized during evaluation, bounded, and shown"
+      (let [described (:value (context/evaluate project "(map str [1 2])"))]
+        (is (= :inert-data (:value/kind described)))
+        (is (= ["1" "2"] (:value/data described)))
+        (is (= "clojure.lang.LazySeq" (:value/type described))))
+      (let [described (:value (context/evaluate project
+                                                "(map str (range 100000))"))]
+        (is (= :inert-data (:value/kind described)))
+        (is (true? (:value/truncated? described)))
+        (is (= 1000 (:value/elements described)))))
+    (doseq [source ["#\"x\""
                     "#inst \"2026-01-01T00:00:00.000-00:00\""
                     "#uuid \"00000000-0000-0000-0000-000000000000\""]]
       (let [description (:value (context/evaluate project source))]

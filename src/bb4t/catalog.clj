@@ -60,6 +60,26 @@
               ":bytes. Does not recurse and does not follow symbolic links.")
     :arglists (list ['relative-path])}})
 
+(def ^:private project-search
+  {:capability/id :project/search
+   :effects #{:project/search}
+   :doc "Search file contents under the project root with a bounded regex."
+   :implementation/id :bb4t.project/search
+   :operation
+   {:operation/id :project/search
+    :input/schema [:or [:tuple :string] [:tuple :string :map]]
+    :output/schema :project/search-matches
+    :sci/namespace 'project
+    :sci/var 'search
+    :doc (str "Search file contents under the authorized project root for a "
+              "regular expression. Returns a vector of {:path :line :text} "
+              "sorted by path, bounded by the context's result and file "
+              "limits. Options: {:path \"subdir\"} to search one subtree, "
+              "{:include-hidden? true} to include dot-entries, which are "
+              "skipped by default. Does not follow symbolic links and skips "
+              "files that are not valid UTF-8.")
+    :arglists (list ['pattern] ['pattern 'options])}})
+
 (def capability-catalog
   {:catalog/version 1
    :catalog/type :bb4t/capability-catalog
@@ -67,7 +87,8 @@
    {(:capability/id json-read) json-read
     (:capability/id json-write) json-write
     (:capability/id project-read) project-read
-    (:capability/id project-list) project-list}})
+    (:capability/id project-list) project-list
+    (:capability/id project-search) project-search}})
 
 (def profiles
   {:agent/minimal
@@ -87,22 +108,33 @@
     :profile/resources {:project :project/root}
     :profile/limits {:project/read-max-bytes 1048576}}
 
+   ;; The active A2 profile. Unlike :agent/project-read it is not frozen: A2
+   ;; is open, and its surface grows as the milestone adds capabilities. It
+   ;; freezes when A2 is accepted. Evidence recorded against it must name the
+   ;; capability set it was measured with.
    :agent/project-survey
    {:profile/id :agent/project-survey
     :profile/max-capabilities #{:data/json-read :data/json-write
-                                :project/read :project/list}
+                                :project/read :project/list :project/search}
     :profile/resources {:project :project/root}
     :profile/limits {:project/read-max-bytes 1048576
-                     :project/list-max-entries 4096}}})
+                     :project/list-max-entries 4096
+                     :project/search-max-results 200
+                     :project/search-max-files 20000}}})
 
 (def project-capabilities
   "Capabilities bound to the project resource.  Each contributes the limit
    keys its implementation enforces, so a context's limits are exactly the
    limits its grants actually use."
   {:project/read {:limits #{:project/read-max-bytes}}
-   :project/list {:limits #{:project/list-max-entries}}})
+   :project/list {:limits #{:project/list-max-entries}}
+   ;; Search reads file contents, so it carries the read byte bound too: the
+   ;; limit belongs to the effect, not to the operation that names it.
+   :project/search {:limits #{:project/search-max-results
+                              :project/search-max-files
+                              :project/read-max-bytes}}})
 
-(def base-allow
+(def ^:private base-allow-core
   "The pure Clojure vocabulary a bounded context may use.
 
   A0 shipped 26 symbols, which was enough to call an operation and print the
@@ -145,15 +177,37 @@
      apply comp complement constantly identity partial
      ;; strings and naming
      format name namespace pr-str str subs symbol keyword
-     clojure.string/blank? clojure.string/capitalize clojure.string/ends-with?
-     clojure.string/escape clojure.string/includes? clojure.string/index-of
-     clojure.string/join clojure.string/last-index-of clojure.string/lower-case
-     clojure.string/replace clojure.string/replace-first clojure.string/reverse
-     clojure.string/split clojure.string/split-lines clojure.string/starts-with?
-     clojure.string/trim clojure.string/trim-newline clojure.string/triml
-     clojure.string/trimr clojure.string/upper-case
      ;; discovery and output
      apropos doc println})
+
+(def ^:private string-vars
+  "The clojure.string subset a bounded context may call. Pure text functions
+   only: nothing here reads a file, resolves a name, or compiles code."
+  '#{blank? capitalize ends-with? escape includes? index-of join last-index-of
+     lower-case replace replace-first reverse split split-lines starts-with?
+     trim trim-newline triml trimr upper-case})
+
+(def base-allow
+  "Both spellings of each string function are listed deliberately.
+
+  SCI checks permission against the symbol as written, before alias
+  resolution, so an alias alone does not make `str/join` callable. Listing
+  both keeps the allow-list a literal statement of what may be written, which
+  is the property an authority list should have: no spelling is permitted by
+  indirection."
+  (into base-allow-core
+        (mapcat (fn [v]
+                  [(symbol "clojure.string" (str v))
+                   (symbol "str" (str v))]))
+        string-vars))
+
+(def base-ns-aliases
+  "Namespace aliases available without require, which the bounded context has
+   no way to establish for itself.
+
+   An alias is a name for a namespace, not a grant: a var still has to be in
+   base-allow to be called through it."
+  '{str clojure.string})
 
 (def implicit-default-deny
   '#{*ns* *read-eval* *data-readers* *default-data-reader-fn*
