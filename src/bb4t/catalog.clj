@@ -42,13 +42,32 @@
     :doc "Read a UTF-8 file relative to the authorized project root."
     :arglists (list ['relative-path])}})
 
+(def ^:private project-list
+  {:capability/id :project/list
+   :effects #{:project/list}
+   :doc "List the immediate entries of a directory under the project root."
+   :implementation/id :bb4t.project/list
+   :operation
+   {:operation/id :project/list
+    :input/schema [:tuple :relative-path]
+    :output/schema :project/directory-listing
+    :sci/namespace 'project
+    :sci/var 'list
+    :doc (str "List entries directly under a directory relative to the "
+              "authorized project root. Pass \".\" for the root itself. "
+              "Returns a vector of {:name :kind} sorted by name, where :kind "
+              "is :file, :directory, :symlink or :other, and files also carry "
+              ":bytes. Does not recurse and does not follow symbolic links.")
+    :arglists (list ['relative-path])}})
+
 (def capability-catalog
   {:catalog/version 1
    :catalog/type :bb4t/capability-catalog
    :capabilities
    {(:capability/id json-read) json-read
     (:capability/id json-write) json-write
-    (:capability/id project-read) project-read}})
+    (:capability/id project-read) project-read
+    (:capability/id project-list) project-list}})
 
 (def profiles
   {:agent/minimal
@@ -59,11 +78,29 @@
    {:profile/id :transform/pure
     :profile/max-capabilities #{:data/json-read :data/json-write}}
 
+   ;; Frozen. A0, A1 and A1.1 evidence is recorded against this exact
+   ;; profile, so a new capability gets a new profile rather than widening
+   ;; this one underneath the recorded coordinates.
    :agent/project-read
    {:profile/id :agent/project-read
     :profile/max-capabilities #{:data/json-read :data/json-write :project/read}
     :profile/resources {:project :project/root}
-    :profile/limits {:project/read-max-bytes 1048576}}})
+    :profile/limits {:project/read-max-bytes 1048576}}
+
+   :agent/project-survey
+   {:profile/id :agent/project-survey
+    :profile/max-capabilities #{:data/json-read :data/json-write
+                                :project/read :project/list}
+    :profile/resources {:project :project/root}
+    :profile/limits {:project/read-max-bytes 1048576
+                     :project/list-max-entries 4096}}})
+
+(def project-capabilities
+  "Capabilities bound to the project resource.  Each contributes the limit
+   keys its implementation enforces, so a context's limits are exactly the
+   limits its grants actually use."
+  {:project/read {:limits #{:project/read-max-bytes}}
+   :project/list {:limits #{:project/list-max-entries}}})
 
 (def base-allow
   '#{* + - / = apropos assoc count conj def do doc first get hash-map hash-set

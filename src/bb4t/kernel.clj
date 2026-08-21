@@ -268,6 +268,94 @@
       (finally
         (close-directories! @opened)))))
 
+(defn- entry-kind [^BasicFileAttributes attributes]
+  (cond
+    (.isRegularFile attributes) :file
+    (.isDirectory attributes) :directory
+    (.isSymbolicLink attributes) :symlink
+    :else :other))
+
+(defn- directory-entries
+  "Lists one directory's immediate entries as inert data.
+
+  Attributes are read through the open SecureDirectoryStream with
+  NOFOLLOW_LINKS, so a symbolic link is reported as a link rather than
+  followed to whatever it names, inside or outside the root.  Nothing here
+  recurses: listing is one directory deep by construction, so no traversal
+  can walk out of the authorized root."
+  [^SecureDirectoryStream directory max-entries]
+  (let [entries
+        (loop [remaining (iterator-seq (.iterator directory))
+               collected (transient [])
+               seen 0]
+          (if-let [^Path entry (first remaining)]
+            (do
+              (when (>= seen max-entries)
+                (fail! "Project directory exceeds entry limit"
+                       {:limit max-entries}))
+              (let [^Path name-path (.getFileName entry)
+                    ^BasicFileAttributeView view
+                    (.getFileAttributeView
+                     directory name-path BasicFileAttributeView
+                     (into-array LinkOption [LinkOption/NOFOLLOW_LINKS]))
+                    ^BasicFileAttributes attributes (.readAttributes view)
+                    kind (entry-kind attributes)]
+                (recur (rest remaining)
+                       (conj! collected
+                              (cond-> {:name (str name-path) :kind kind}
+                                (= :file kind)
+                                (assoc :bytes (.size attributes))))
+                       (inc seen))))
+            (persistent! collected)))]
+    ;; Sorted so a listing is a value, not an artefact of iteration order.
+    (vec (sort-by :name entries))))
+
+(defn- secure-project-listing
+  "Opens relative-target as a directory under root and lists it.
+
+  Uses the same secure component-by-component descent as reading, so an
+  intermediate symbolic link cannot redirect the walk."
+  [^Path root ^Path relative-target max-entries]
+  (let [;; Relativizing the root against itself yields the empty path, which
+        ;; reports one nameless component rather than none. Listing the root
+        ;; is this operation's primary use, so drop those instead of
+        ;; descending into a component named "".
+        components (into []
+                         (comp (map #(.getName relative-target %))
+                               (remove #(str/blank? (str %))))
+                         (range (.getNameCount relative-target)))
+        opened (atom [])]
+    (try
+      (let [root-directory (Files/newDirectoryStream root)]
+        (swap! opened conj root-directory)
+        (when-not (instance? SecureDirectoryStream root-directory)
+          (fail! "Filesystem cannot provide secure project traversal"
+                 {:filesystem/feature :secure-directory-stream}))
+        (loop [^SecureDirectoryStream directory root-directory
+               [component & more] components]
+          (if component
+            (let [^SecureDirectoryStream child
+                  (try
+                    (.newDirectoryStream
+                     directory component
+                     (into-array LinkOption [LinkOption/NOFOLLOW_LINKS]))
+                    (catch java.nio.file.NotDirectoryException _
+                      (fail! "project/list target is not a directory" {}))
+                    (catch java.nio.file.NoSuchFileException _
+                      (fail! "project/list target does not exist" {}))
+                    ;; Both of the above extend FileSystemException, so this
+                    ;; stays last. It is what a symbolic link component
+                    ;; raises under NOFOLLOW_LINKS, which is the case that
+                    ;; would otherwise walk out of the authorized root.
+                    (catch java.nio.file.FileSystemException _
+                      (fail! "project/list will not follow a symbolic link"
+                             {})))]
+              (swap! opened conj child)
+              (recur child more))
+            (directory-entries directory max-entries))))
+      (finally
+        (close-directories! @opened)))))
+
 (defn- decode-utf8 [bytes]
   (let [decoder (doto (.newDecoder StandardCharsets/UTF_8)
                   (.onMalformedInput CodingErrorAction/REPORT)
@@ -298,10 +386,33 @@
         root (.relativize root lexical-target)
         (get-in effective [:context/limits :project/read-max-bytes]))))))
 
+(defn- project-list [runtime effective [relative-path :as args]]
+  (when-not (and (= 1 (count args))
+                 (string? relative-path)
+                 (not (str/blank? relative-path))
+                 (<= (count relative-path) 4096))
+    (fail! "project/list expects one bounded non-empty relative path"
+           {:operation/id :project/list}))
+  (let [resource-id (get-in effective [:context/resources :project :resource/id])
+        ^Path root (get (:resources runtime) resource-id)
+        supplied (Paths/get relative-path (make-array String 0))]
+    (when (.isAbsolute supplied)
+      (fail! "project/list rejects absolute paths" {:path relative-path}))
+    (let [lexical-target (.normalize (.resolve root supplied))]
+      (when-not (.startsWith lexical-target root)
+        (fail! "project/list path escapes the authorized root"
+               {:path relative-path}))
+      ;; Unlike reading, the root itself is a legitimate target: listing it
+      ;; is the operation's primary use.
+      (secure-project-listing
+       root (.relativize root lexical-target)
+       (get-in effective [:context/limits :project/list-max-entries])))))
+
 (def ^:private implementations
   {:bb4t.data/json-read (fn [_runtime _effective args] (json-read args))
    :bb4t.data/json-write (fn [_runtime _effective args] (json-write args))
-   :bb4t.project/read project-read})
+   :bb4t.project/read project-read
+   :bb4t.project/list project-list})
 
 (defn- timestamp []
   (str (Instant/now)))
@@ -445,33 +556,44 @@
       (when-not (every? compiled authorized)
         (fail! "Authorized capabilities are not compiled"
                {:authorized authorized :compiled compiled}))
-      (let [project-read? (contains? requested :project/read)
-            default-bindings (if project-read? (:profile/resources profile) {})
+      (let [;; Each project capability contributes the limit keys its own
+            ;; implementation enforces, so a context carries exactly the
+            ;; limits its grants use -- no more, and never fewer.
+            requested-project (filterv #(contains? catalog/project-capabilities %)
+                                       requested)
+            project? (boolean (seq requested-project))
+            required-limits (into #{}
+                                  (mapcat #(get-in catalog/project-capabilities
+                                                   [% :limits]))
+                                  requested-project)
+            default-bindings (if project? (:profile/resources profile) {})
             resource-bindings (or (:resource-bindings input) default-bindings)
-            default-limits (if project-read? (:profile/limits profile) {})
+            default-limits (select-keys (:profile/limits profile) required-limits)
             limits (or (:limits input) default-limits)]
-        (when-not (= (if project-read? #{:project} #{})
+        (when-not (= (if project? #{:project} #{})
                      (set (keys resource-bindings)))
           (fail! "Context resource bindings do not match effective grants"
                  {:resource-bindings resource-bindings :requested requested}))
-        (when-not (= (if project-read? #{:project/read-max-bytes} #{})
-                     (set (keys limits)))
+        (when-not (= required-limits (set (keys limits)))
           (fail! "Context limits do not match effective grants"
                  {:limits limits :requested requested}))
-        (when project-read?
+        (when project?
           (when-not (= :project/root (:project resource-bindings))
             (fail! "Project capability requires the trusted project resource"
                    {:resource-bindings resource-bindings}))
           (when-not (contains? (:resources runtime) :project/root)
             (fail! "Runtime has no project resource" {}))
-          (let [max-bytes (:project/read-max-bytes limits)
-                profile-max-bytes (get-in profile
-                                          [:profile/limits :project/read-max-bytes])]
-            (when-not (and (integer? max-bytes)
-                           (pos? max-bytes)
-                           (<= max-bytes profile-max-bytes))
-              (fail! "Project read limit exceeds the profile maximum"
-                     {:limit max-bytes :profile/max profile-max-bytes}))))
+          (doseq [limit-key required-limits]
+            (let [value (get limits limit-key)
+                  profile-max (get-in profile [:profile/limits limit-key])]
+              (when-not (and (integer? value)
+                             (pos? value)
+                             (integer? profile-max)
+                             (<= value profile-max))
+                (fail! "Project limit exceeds the profile maximum"
+                       {:limit/key limit-key
+                        :limit value
+                        :profile/max profile-max})))))
         {:context-spec/version version
          :profile profile-id
          :requested-capabilities requested

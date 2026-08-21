@@ -1,9 +1,25 @@
 # Current Scope
 
-**Active milestone:** none. A1.1 is closed; A2 is not open.
+**Active milestone:** A2 - useful semantic project world.
 
 **Milestone status:** BB0 PASS, BB1 PASS, A0 PASS, S0a PASS, S0b PASS, A1 PASS,
-A1.1 PASS.
+A1.1 PASS, A2 ACTIVE.
+
+## A2 in bb4t
+
+A2 adds project capabilities. bb4t owns the trusted implementations and the
+catalog entries; bbagent owns which profile a session asks for.
+
+The rule this milestone follows: **a new capability gets a new profile.**
+`:agent/project-read` is frozen because A0, A1 and A1.1 evidence is recorded
+against it, and widening it underneath those coordinates would make them
+irreproducible. `:agent/project-survey` is the A2 profile.
+
+Delivered so far: `:project/list`, one directory deep, NOFOLLOW_LINKS on every
+traversal step, bounded by `:project/list-max-entries`, returning inert sorted
+data. Context limit validation is now derived per project capability rather
+than hardcoded to the read limit, so each capability contributes exactly the
+limits its implementation enforces.
 
 ## Purpose
 
