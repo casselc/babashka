@@ -1,9 +1,9 @@
 # Current Scope
 
-**Active milestone:** A1.1 - model capability orientation (bbagent-owned).
+**Active milestone:** none. A1.1 is closed; A2 is not open.
 
 **Milestone status:** BB0 PASS, BB1 PASS, A0 PASS, S0a PASS, S0b PASS, A1 PASS,
-A1.1 ACTIVE.
+A1.1 PASS.
 
 ## Purpose
 
@@ -15,12 +15,26 @@ the native sqlitejdbc sidecar remain confined to the inactive-by-default
 `:app/bbagent` application profile.
 
 A1 is complete; `:app/bbagent` gained one pinned dependency, `charm.clj 0.2.74`,
-and nothing else changed. A1.1 is owned by the separate `bbagent` repository and
-is expected to need **no bb4t change at all**: it derives model orientation from
-the existing RuntimeCatalog and Context description rather than adding
-capability. bb4t's role remains limited to hosting the application build
-profile. The accepted BB1 result remains frozen at `bb4t-bb1`
-and the A0 application hook at `bb4t-a0`.
+and nothing else changed.
+
+A1.1 is complete, accepted, and frozen in the separate `bbagent` repository at
+`bbagent-a1.1`. **It required no bb4t change, as this scope predicted.** It
+derived model orientation from the existing RuntimeCatalog and Context
+description rather than adding capability, so there is no new bb4t coordinate;
+bb4t's contribution remains the S0a application build profile and the A1
+`charm.clj` pin. bb4t's role stays limited to hosting the application build
+profile. The accepted BB1 result remains frozen at `bb4t-bb1` and the A0
+application hook at `bb4t-a0`.
+
+**What A1.1 found that bb4t should expect.** Orientation is generated from the
+context description, so a capability added to the RuntimeCatalog appears in the
+model's preamble automatically. The *absence* of capability is not: bbagent
+currently asserts it as prose. Closing that needs the context description to
+answer "which effects does this context grant" in a form bbagent can project,
+which is a description/projection question rather than a new capability. If
+bbagent cannot answer it from what the description already exposes, that is the
+one place A2 may legitimately ask bb4t for something, and it must still be a
+projection of existing authority, never a widening of it.
 
 ## Owned Work
 
