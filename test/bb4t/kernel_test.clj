@@ -6,6 +6,7 @@
             [bb4t.kernel :as kernel]
             [bb4t.operation :as operation]
             [bb4t.runtime :as runtime]
+            [bb4t.transcript :as transcript]
             [bb4t.value :as value]
             [clojure.test :refer [deftest is testing]])
   (:import [java.nio.file Files LinkOption OpenOption Path]
@@ -387,3 +388,191 @@
       (is (= sequences
              (vec (range (inc (- (peek sequences) (count sequences)))
                          (inc (peek sequences)))))))))
+
+(defn- transcript-error [thunk]
+  (try
+    (thunk)
+    nil
+    (catch clojure.lang.ExceptionInfo error
+      (:transcript/error (ex-data error)))))
+
+(defn- evaluation-error
+  "The kernel's own failure category for an evaluation, past SCI's wrapper."
+  [thunk]
+  (try
+    (thunk)
+    nil
+    (catch Throwable error
+      (loop [current error depth 0]
+        (cond
+          (or (nil? current) (> depth 8)) nil
+          (:bb4t/error (ex-data current)) (:bb4t/error (ex-data current))
+          :else (recur (ex-cause current) (inc depth)))))))
+
+(defn- with-transcript-root [body]
+  (let [root (Files/createTempDirectory
+              "bb4t-transcript"
+              (make-array java.nio.file.attribute.FileAttribute 0))]
+    (try
+      (body root)
+      (finally
+        (doseq [^Path path (reverse (vec (iterator-seq
+                                          (.iterator (Files/walk root
+                                                                 (make-array
+                                                                  java.nio.file.FileVisitOption
+                                                                  0))))))]
+          (Files/deleteIfExists path))))))
+
+(deftest transcript-records-every-operation-in-order-test
+  (with-transcript-root
+    (fn [root]
+      (Files/writeString (.resolve root "a.txt") "alpha"
+                         (make-array OpenOption 0))
+      (let [runtime (runtime/create {:resources {:project/root root}})
+            context (context/create runtime {:profile :agent/project-develop})
+            recorder (transcript/recorder)]
+        (context/evaluate
+         context
+         "(let [before (project/stat \"a.txt\")]
+            (project/edit {:path \"a.txt\" :base {:digest (:digest before)}
+                           :content (str (project/read \"a.txt\") \"!\")}))"
+         recorder)
+        (let [operations (transcript/operations recorder)]
+          (is (= [:project/stat :project/read :project/edit]
+                 (mapv :operation/id operations))
+              "receipts are ordered by invocation, not by source position")
+          (is (every? #(= :ok (:status %)) operations))
+          (is (every? #(string? (:args/digest %)) operations))
+          (is (= #{:project/write} (:effects (last operations))))
+          (is (= "alpha" (:result (second operations)))))))))
+
+(deftest transcript-replay-reproduces-without-touching-the-world-test
+  (with-transcript-root
+    (fn [root]
+      (let [file (.resolve root "created.txt")
+            runtime (runtime/create {:resources {:project/root root}})
+            context (context/create runtime {:profile :agent/project-develop})
+            source (str "(def applied (project/edit {:path \"created.txt\" "
+                        ":base :absent :content \"one\"}))")
+            recorder (transcript/recorder)]
+        (context/evaluate context source recorder)
+        (is (= "one" (Files/readString file)))
+        ;; A second Context is exactly what recovery builds: a fresh bounded
+        ;; SCI with none of the session's definitions in it.
+        (let [resumed (context/create runtime {:profile :agent/project-develop})
+              receipts (transcript/operations recorder)]
+          (context/evaluate resumed source (transcript/player receipts))
+          (is (= "one" (Files/readString file))
+              "replay must not issue a second write")
+          (is (= (get-in (context/evaluate resumed "(:bytes applied)")
+                         [:value :value/data])
+                 3)
+              "the binding the edit produced is reconstructed"))))))
+
+(deftest transcript-replay-fails-closed-on-divergence-test
+  (with-transcript-root
+    (fn [root]
+      (Files/writeString (.resolve root "a.txt") "alpha"
+                         (make-array OpenOption 0))
+      (Files/writeString (.resolve root "b.txt") "beta"
+                         (make-array OpenOption 0))
+      (let [runtime (runtime/create {:resources {:project/root root}})
+            context (context/create runtime {:profile :agent/project-develop})
+            recorder (transcript/recorder)
+            _ (context/evaluate context "(project/read \"a.txt\")" recorder)
+            receipts (transcript/operations recorder)
+            fresh #(context/create runtime {:profile :agent/project-develop})]
+        (is (= :args-mismatch
+               (transcript-error
+                #(context/evaluate (fresh) "(project/read \"b.txt\")"
+                                   (transcript/player receipts)))))
+        (is (= :operation-mismatch
+               (transcript-error
+                #(context/evaluate (fresh) "(project/stat \"a.txt\")"
+                                   (transcript/player receipts)))))
+        (is (= :exhausted
+               (transcript-error
+                #(context/evaluate (fresh)
+                                   "(do (project/read \"a.txt\")
+                                        (project/read \"a.txt\"))"
+                                   (transcript/player receipts)))))
+        (is (= :unconsumed
+               (transcript-error
+                #(context/evaluate (fresh) "(+ 1 2)"
+                                   (transcript/player receipts)))))
+        (is (= :unconsumed
+               (transcript-error
+                #(context/evaluate (fresh) "(/ 1 0)"
+                                   (transcript/player receipts))))
+            "a form that failed before reaching its operations is a divergence")
+        (is (= "alpha"
+               (get-in (context/evaluate (fresh) "(project/read \"a.txt\")"
+                                         (transcript/player receipts))
+                       [:value :value/data]))
+            "the matching replay still succeeds")))))
+
+(deftest transcript-reproduces-a-recorded-failure-test
+  (with-transcript-root
+    (fn [root]
+      (let [runtime (runtime/create {:resources {:project/root root}})
+            context (context/create runtime {:profile :agent/project-develop})
+            recorder (transcript/recorder)
+            source "(project/read \"missing.txt\")"]
+        (is (= :operation-failed
+               (evaluation-error #(context/evaluate context source recorder))))
+        (let [receipts (transcript/operations recorder)]
+          (is (= [:error] (mapv :status receipts)))
+          ;; The world is now able to answer the question the original could
+          ;; not.  Replay must still reproduce the failure the session saw.
+          (Files/writeString (.resolve root "missing.txt") "now here"
+                             (make-array OpenOption 0))
+          (let [resumed (context/create runtime
+                                        {:profile :agent/project-develop})]
+            (is (= :operation-failed
+                   (evaluation-error #(context/evaluate resumed source
+                                                        (transcript/player
+                                                         receipts)))))))))))
+
+(deftest legacy-replay-observes-but-never-actuates-test
+  (with-transcript-root
+    (fn [root]
+      (Files/writeString (.resolve root "a.txt") "alpha"
+                         (make-array OpenOption 0))
+      (let [runtime (runtime/create {:resources {:project/root root}})
+            context (context/create runtime {:profile :agent/project-develop})
+            observed (transcript/legacy)]
+        (is (= "alpha"
+               (get-in (context/evaluate context "(project/read \"a.txt\")"
+                                         observed)
+                       [:value :value/data]))
+            "a historical read still replays, against today's world")
+        (is (= [:project/read] (transcript/observations observed)))
+        (is (= :actuation-without-transcript
+               (transcript-error
+                #(context/evaluate context
+                                   (str "(project/edit {:path \"a.txt\" "
+                                        ":base :absent :content \"x\"})")
+                                   (transcript/legacy)))))
+        (is (= "alpha" (Files/readString (.resolve root "a.txt")))
+            "the refused actuation left the world alone")))))
+
+(deftest every-declared-effect-is-classified-test
+  (doseq [[capability-id capability]
+          (:capabilities catalog/capability-catalog)]
+    (doseq [effect (:effects capability)]
+      (is (contains? catalog/effect-kinds (catalog/effect-kind effect))
+          (str capability-id " declares an unclassified effect " effect)))))
+
+(deftest lenient-coordinate-is-total-and-separated-test
+  (is (= (canonical/lenient-coordinate :bb4t/test-vector ["a" 1])
+         (canonical/lenient-coordinate :bb4t/test-vector ["a" 1])))
+  (is (not= (canonical/lenient-coordinate :bb4t/test-vector ["a" 1])
+            (canonical/coordinate :bb4t/test-vector ["a" 1]))
+      "a lenient digest can never be mistaken for a strict one")
+  (is (not= (canonical/lenient-coordinate :bb4t/test-vector [1.5])
+            (canonical/lenient-coordinate :bb4t/test-vector [2.5])))
+  (is (string? (canonical/lenient-coordinate :bb4t/test-vector [(range)]))
+      "an unbounded argument yields a marker rather than hanging")
+  (is (= (canonical/lenient-coordinate :bb4t/test-vector [(equality-forge 1)])
+         (canonical/lenient-coordinate :bb4t/test-vector [(equality-forge 2)]))
+      "a value outside the inert domain is identified by its type alone"))

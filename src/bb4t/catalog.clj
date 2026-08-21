@@ -119,6 +119,31 @@
               "links.")
     :arglists (list ['options])}})
 
+(def effects
+  "Every effect a capability may declare, and what re-running it would do.
+
+  A capability with no declared effects is a pure function of its arguments:
+  running it again can neither observe nor change anything, so a recovery that
+  re-runs it computes exactly what the original computed.  An :observation
+  effect reads a world that may have changed since, so re-running it answers a
+  different question than the one that was asked.  An :actuation effect changes
+  that world, so re-running it is not a repeated question but a second change.
+
+  Recovery reads this rather than a list of operation names.  A capability
+  added without classifying its effect fails catalog validation instead of
+  being silently re-executed against the live world."
+  {:project/read {:effect/kind :observation}
+   :project/list {:effect/kind :observation}
+   :project/search {:effect/kind :observation}
+   :project/write {:effect/kind :actuation}})
+
+(def effect-kinds #{:observation :actuation})
+
+(defn effect-kind
+  "The declared kind of one effect, or nil when it is unclassified."
+  [effect]
+  (get-in effects [effect :effect/kind]))
+
 (def capability-catalog
   {:catalog/version 1
    :catalog/type :bb4t/capability-catalog
@@ -149,10 +174,11 @@
     :profile/resources {:project :project/root}
     :profile/limits {:project/read-max-bytes 1048576}}
 
-   ;; The active A2 profile. Unlike :agent/project-read it is not frozen: A2
-   ;; is open, and its surface grows as the milestone adds capabilities. It
-   ;; freezes when A2 is accepted. Evidence recorded against it must name the
-   ;; capability set it was measured with.
+   ;; The A2 observing surface. Unlike :agent/project-read it is not frozen
+   ;; while A2 is open; evidence recorded against it must name the capability
+   ;; set it was measured with. It stays read-only: write authority is a
+   ;; deliberate step up rather than something a surveying profile acquires
+   ;; because the milestone moved on.
    :agent/project-survey
    {:profile/id :agent/project-survey
     :profile/max-capabilities #{:data/json-read :data/json-write
@@ -164,9 +190,8 @@
                      :project/search-max-results 200
                      :project/search-max-files 20000}}
 
-   ;; Survey stays read-only and stays meaningful. Write authority is a
-   ;; deliberate step up rather than something a read-only profile acquires
-   ;; because the milestone moved on.
+   ;; The profile that can change the project, and what a bbagent session
+   ;; defaults to.
    :agent/project-develop
    {:profile/id :agent/project-develop
     :profile/max-capabilities #{:data/json-read :data/json-write

@@ -12,6 +12,10 @@
   (kernel/context-description context))
 
 (defn evaluate
-  "Evaluates source and returns an inert value description plus output data."
-  [context source]
-  (kernel/evaluate context source))
+  "Evaluates source and returns an inert value description plus output data.
+
+  With a bb4t.transcript, the semantic operations the source invokes are
+  recorded or reproduced at the operation boundary; the evaluation is
+  otherwise identical."
+  ([context source] (kernel/evaluate context source))
+  ([context source transcript] (kernel/evaluate context source transcript)))

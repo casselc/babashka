@@ -46,10 +46,59 @@
 
 (defrecord ContextState
   [runtime instance-id spec spec-coordinate effective coordinate sci-context lock
-   projections allow])
+   projections allow transcript])
+
+(defrecord Transcript [mode state])
 
 (defn- fail! [message data]
   (throw (ex-info message (assoc data :bb4t/error :validation))))
+
+(defn- transcript-fail!
+  "Fails an evaluation closed because its transcript did not account for what
+   the form did.
+
+  A distinct :bb4t/error, because this is not the bounded context refusing an
+  operation: it is recovery refusing to guess.  The caller has to be able to
+  tell the two apart, or a replay that diverged would be indistinguishable
+  from a form that legitimately failed the same way it always did."
+  [reason message data]
+  (throw (ex-info message (merge data {:bb4t/error :transcript
+                                       :transcript/error reason}))))
+
+(defn create-recorder
+  "A transcript that records every semantic operation an evaluation invokes."
+  []
+  (->Transcript :record (atom {:operations []})))
+
+(defn create-player
+  "A transcript that reproduces recorded operations instead of invoking them."
+  [receipts]
+  (when-not (and (sequential? receipts) (every? map? receipts))
+    (fail! "Operation receipts must be a sequence of maps" {}))
+  (->Transcript :replay (atom {:receipts (vec receipts) :cursor 0})))
+
+(defn create-legacy
+  "A transcript for a form recorded before transcripts existed.
+
+  There is no receipt to reproduce, so an operation runs against the live
+  world.  That is tolerable for an observation, which at worst answers a newer
+  question, and is not tolerable for an actuation, which would be a second
+  change.  Observations are counted so the caller can state plainly that the
+  reconstruction was approximate rather than exact."
+  []
+  (->Transcript :legacy (atom {:observations []})))
+
+(defn transcript? [value] (instance? Transcript value))
+
+(defn transcript-operations
+  "The receipts a recording transcript captured, in invocation order."
+  [transcript]
+  (:operations @(:state transcript)))
+
+(defn transcript-observations
+  "The operation IDs a legacy transcript re-observed, in invocation order."
+  [transcript]
+  (:observations @(:state transcript)))
 
 (def ^:private ^Map runtime-handles
   (Collections/synchronizedMap (WeakHashMap.)))
@@ -115,6 +164,13 @@
                      (every? qualified-keyword? (:effects capability)))
         (fail! "Capability effects must be qualified keywords"
                {:capability/id capability-id}))
+      ;; Recovery decides whether a historical operation may be re-run from
+      ;; this classification, so an unclassified effect is a catalog error
+      ;; rather than a capability that quietly defaults to re-executable.
+      (doseq [effect (:effects capability)]
+        (when-not (contains? catalog/effect-kinds (catalog/effect-kind effect))
+          (fail! "Capability declares an unclassified effect"
+                 {:capability/id capability-id :effect effect})))
       (when-not (qualified-keyword? (:implementation/id capability))
         (fail! "Implementation ID must be a qualified keyword"
                {:capability/id capability-id}))
@@ -975,8 +1031,153 @@
             [capability-id capability]))
         (get-in runtime [:catalog :capabilities])))
 
+(defn- inert-error-data
+  "The part of a failure's data that can be written down and read back.
+
+  A kernel failure carries qualified keywords, bounded numbers and relative
+  paths, all of which survive.  An entry that does not is dropped rather than
+  reconstructed approximately, because a recovery that reproduced a nearly
+  right failure would be worse than one that reproduced a plainly partial
+  one."
+  [data]
+  (when (map? data)
+    (into {}
+          (keep (fn [[key value]]
+                  (try
+                    (canonical/canonical-string [key value])
+                    [key value]
+                    (catch Throwable _ nil))))
+          data)))
+
+(defn- recorded-outcome
+  "One receipt's account of what an operation returned or threw.
+
+  A successful result is written down with its own strict coordinate.  The
+  journal that stores it is free to rewrite large strings as content
+  references and to strip entries that look like secrets; the coordinate is
+  taken here, before any of that, so a value that came back changed fails
+  closed on replay instead of being reconstructed wrong."
+  [{:keys [status result error]}]
+  (if (= :ok status)
+    (try
+      {:status :ok
+       :result result
+       :result/digest (canonical/coordinate :bb4t/operation-result result)}
+      (catch Throwable _
+        {:status :ok
+         :result/opaque true
+         :result/type (some-> result class .getName)}))
+    {:status :error
+     :error/message (ex-message error)
+     :error/type (.getName (class error))
+     :error/data (inert-error-data (ex-data error))}))
+
+(defn- args-digest [args]
+  (canonical/lenient-coordinate :bb4t/operation-args (vec args)))
+
+(defn- actuating? [capability]
+  (boolean (some #(= :actuation (catalog/effect-kind %)) (:effects capability))))
+
+(defn- run-implementation!
+  [runtime effective context-coordinate instance-id operation-id capability-id
+   capability args]
+  (let [implementation (get (:implementations runtime)
+                            (:implementation/id capability))]
+    (try
+      (let [result (implementation runtime effective args)]
+        (emit! runtime context-coordinate instance-id :operation/completed
+               {:operation/id operation-id
+                :capability/id capability-id
+                :status :ok})
+        {:status :ok :result result})
+      (catch Throwable error
+        (emit! runtime context-coordinate instance-id :operation/failed
+               {:operation/id operation-id
+                :capability/id capability-id
+                :status :error
+                :error/type (.getName (class error))})
+        {:status :error
+         :error (if (or (not (instance? Exception error))
+                        (:bb4t/error (ex-data error)))
+                  error
+                  (ex-info "Semantic operation failed"
+                           {:bb4t/error :operation-failed
+                            :operation/id operation-id
+                            :capability/id capability-id
+                            :error/type (.getName (class error))}
+                           error))}))))
+
+(defn- replay-operation!
+  "Reproduces one recorded operation without reaching the world.
+
+  Identity and arguments are checked before the recorded outcome is handed
+  back, so a replay that took a different branch, called a different
+  operation, or called the same operation with different arguments stops here
+  rather than continuing on a receipt that was never about it."
+  [runtime context-coordinate instance-id transcript operation-id capability-id
+   args]
+  (let [{:keys [receipts cursor]} @(:state transcript)]
+    (when (>= cursor (count receipts))
+      (transcript-fail!
+       :exhausted
+       "Replay invoked more semantic operations than the transcript recorded"
+       {:operation/id operation-id
+        :transcript/index cursor
+        :transcript/count (count receipts)}))
+    (let [receipt (nth receipts cursor)
+          digest (args-digest args)]
+      (when-not (= operation-id (:operation/id receipt))
+        (transcript-fail!
+         :operation-mismatch
+         "Replay invoked a different semantic operation than it recorded"
+         {:transcript/index cursor
+          :transcript/expected (:operation/id receipt)
+          :transcript/actual operation-id}))
+      (when-not (= digest (:args/digest receipt))
+        (transcript-fail!
+         :args-mismatch
+         "Replay invoked a semantic operation with different arguments"
+         {:operation/id operation-id
+          :transcript/index cursor
+          :transcript/expected (:args/digest receipt)
+          :transcript/actual digest}))
+      (swap! (:state transcript) update :cursor inc)
+      (emit! runtime context-coordinate instance-id :operation/replayed
+             {:operation/id operation-id
+              :capability/id capability-id
+              :status (:status receipt)
+              :transcript/index cursor})
+      (case (:status receipt)
+        :ok
+        (if (contains? receipt :result)
+          (let [result (:result receipt)
+                digest (try (canonical/coordinate :bb4t/operation-result result)
+                            (catch Throwable _ nil))]
+            (when-not (= digest (:result/digest receipt))
+              (transcript-fail!
+               :result-integrity
+               "A recorded operation result did not survive storage intact"
+               {:operation/id operation-id
+                :transcript/index cursor
+                :transcript/expected (:result/digest receipt)
+                :transcript/actual digest}))
+            result)
+          (transcript-fail!
+           :opaque-result
+           "A recorded operation result was not inert enough to reconstruct"
+           {:operation/id operation-id :transcript/index cursor}))
+
+        :error
+        (throw (ex-info (str (:error/message receipt))
+                        (assoc (:error/data receipt) :bb4t/replayed true)))
+
+        (transcript-fail! :malformed-receipt
+                          "An operation receipt has no recorded status"
+                          {:operation/id operation-id
+                           :transcript/index cursor})))))
+
 (defn- invoke-authorized
-  [runtime effective context-coordinate instance-id operation-id args]
+  [runtime effective context-coordinate instance-id transcript operation-id args]
   (let [[capability-id capability] (operation-entry runtime operation-id)]
     (when-not capability
       (emit! runtime context-coordinate instance-id :operation/denied
@@ -991,32 +1192,35 @@
                       {:bb4t/error :unauthorized
                        :operation/id operation-id
                        :capability/id capability-id})))
-    (let [implementation-id (:implementation/id capability)
-          implementation (get (:implementations runtime) implementation-id)]
-      (try
-        (let [result (implementation runtime effective args)]
-          (emit! runtime context-coordinate instance-id :operation/completed
-                 {:operation/id operation-id
-                  :capability/id capability-id
-                  :status :ok})
-          result)
-        (catch Throwable error
-          (emit! runtime context-coordinate instance-id :operation/failed
-                 {:operation/id operation-id
-                  :capability/id capability-id
-                  :status :error
-                  :error/type (.getName (class error))})
-          (if (or (not (instance? Exception error))
-                  (:bb4t/error (ex-data error)))
-            (throw error)
-            (throw (ex-info "Semantic operation failed"
-                            {:bb4t/error :operation-failed
-                             :operation/id operation-id
-                             :capability/id capability-id
-                             :error/type (.getName (class error))}
-                            error))))))))
+    ;; Authorization is checked before replay, not after.  A recorded result
+    ;; is still authority over this project, and a context that no longer
+    ;; grants the capability must not be handed one.
+    (if (= :replay (:mode transcript))
+      (replay-operation! runtime context-coordinate instance-id transcript
+                         operation-id capability-id args)
+      (do
+        (when (= :legacy (:mode transcript))
+          (when (actuating? capability)
+            (transcript-fail!
+             :actuation-without-transcript
+             "A historical form would change the project again, and records no receipt for the change it already made"
+             {:operation/id operation-id :capability/id capability-id}))
+          (swap! (:state transcript) update :observations conj operation-id))
+        (let [outcome (run-implementation! runtime effective context-coordinate
+                                           instance-id operation-id capability-id
+                                           capability args)]
+          (when (= :record (:mode transcript))
+            (swap! (:state transcript) update :operations conj
+                   (merge {:operation/id operation-id
+                           :capability/id capability-id
+                           :effects (:effects capability)
+                           :args/digest (args-digest args)}
+                          (recorded-outcome outcome))))
+          (if (= :ok (:status outcome))
+            (:result outcome)
+            (throw (:error outcome))))))))
 
-(defn- projection-data [runtime effective coordinate instance-id]
+(defn- projection-data [runtime effective coordinate instance-id transcript]
   (let [{:keys [projections] :as projected}
         (reduce
          (fn [{:keys [namespaces] :as result} capability-id]
@@ -1030,7 +1234,7 @@
                  implementation
                  (fn [& args]
                    (invoke-authorized runtime effective coordinate instance-id
-                                      operation-id args))
+                                      @transcript operation-id args))
                  sci-var
                  (sci/new-var var-symbol implementation
                               {:ns sci-namespace
@@ -1101,8 +1305,13 @@
                    :context/limits (:limits spec)}
         coordinate (canonical/coordinate :bb4t/context effective)
         instance-id (str (UUID/randomUUID))
+        ;; One slot per Context, set for the duration of one evaluation and
+        ;; cleared after it.  The projections close over the slot rather than
+        ;; over a transcript, so recording and replay are properties of an
+        ;; evaluation and never of the Context itself.
+        transcript (atom nil)
         {:keys [namespaces projections allow]}
-        (projection-data runtime effective coordinate instance-id)
+        (projection-data runtime effective coordinate instance-id transcript)
         sci-namespaces
         (into {} (map (fn [[ns-symbol vars]]
                         [ns-symbol (dissoc vars ::namespace)]))
@@ -1123,7 +1332,8 @@
                                :classes catalog/closed-default-classes
                                :unrestricted false})
         context (->ContextState runtime instance-id spec spec-coordinate effective
-                                coordinate sci-context (Object.) projections allow)]
+                                coordinate sci-context (Object.) projections allow
+                                transcript)]
     (emit! runtime coordinate instance-id :context/created
            {:profile (:profile spec)
             :grants (:requested-capabilities spec)})
@@ -1163,32 +1373,102 @@
                        (count catalog/closed-default-classes)
                        :supplied-import-count 0}}))
 
+(defn- transcript-failure
+  "The transcript frame of a failure, or nil.
+
+  SCI rethrows an evaluation failure with its own location data and keeps the
+  original as a cause, so a transcript refusal raised inside a projection
+  arrives wrapped.  Recovery has to be able to tell a refusal to guess from a
+  form that legitimately failed, so the frame is found rather than inferred
+  from the outermost exception."
+  [error]
+  (loop [current error
+         depth 0]
+    (cond
+      (or (nil? current) (> depth 8)) nil
+      (= :transcript (:bb4t/error (ex-data current))) current
+      :else (recur (ex-cause current) (inc depth)))))
+
+(defn- verify-transcript-consumed!
+  "Fails closed unless a replay used exactly the receipts it was given.
+
+  Too few is a form that took a different path than the one recorded; too many
+  is caught at the call itself.  Either way the reconstruction is not the
+  history, and a partly-reconstructed Context is worse than a refused one."
+  [transcript]
+  (when (= :replay (:mode transcript))
+    (let [{:keys [receipts cursor]} @(:state transcript)]
+      (when-not (= cursor (count receipts))
+        (transcript-fail!
+         :unconsumed
+         "Replay invoked fewer semantic operations than the transcript recorded"
+         {:transcript/index cursor
+          :transcript/count (count receipts)})))))
+
 (defn evaluate
-  "Evaluates source in one persistent context and returns structured output."
-  [context source]
-  (let [context (resolve-handle context-handles :context context)]
-    (when-not (string? source)
-      (fail! "Context evaluation requires source text" {}))
-    (locking (:lock context)
-      (let [out (StringWriter.)
-            err (StringWriter.)]
-        (try
-          (let [{:keys [value origin]}
-                (sci/binding [sci/out out sci/err err]
-                  ;; Realized here, not at description time: forcing runs the
-                  ;; sequence's own computation, which belongs inside the
-                  ;; out/err capture and before the success event.
-                  (value/realize
-                   (sci/eval-string* (:sci-context context) source)))]
-            (emit! (:runtime context) (:coordinate context) (:instance-id context)
-                   :context/evaluated {:status :ok})
-            {:value (value/describe value origin)
-             :out (str out) :err (str err)})
-          (catch Throwable error
-            (emit! (:runtime context) (:coordinate context) (:instance-id context)
-                   :context/evaluation-failed
-                   {:status :error :error/type (.getName (class error))})
-            (throw error)))))))
+  "Evaluates source in one persistent context and returns structured output.
+
+  With a transcript, the same source runs against the same Context and the
+  semantic operations it invokes are either recorded or reproduced.  Nothing
+  about the evaluation itself changes: ordinary Clojure computes exactly as it
+  did, and only the operation boundary behaves differently."
+  ([context source] (evaluate context source nil))
+  ([context source transcript]
+   (let [context (resolve-handle context-handles :context context)]
+     (when-not (string? source)
+       (fail! "Context evaluation requires source text" {}))
+     (when-not (or (nil? transcript) (transcript? transcript))
+       (fail! "Context evaluation transcript is not a bb4t transcript" {}))
+     (locking (:lock context)
+       (reset! (:transcript context) transcript)
+       (try
+         (let [out (StringWriter.)
+               err (StringWriter.)
+               outcome
+               (try
+                 (let [{:keys [value origin]}
+                       (sci/binding [sci/out out sci/err err]
+                         ;; Realized here, not at description time: forcing
+                         ;; runs the sequence's own computation, which belongs
+                         ;; inside the out/err capture and before the success
+                         ;; event.
+                         (value/realize
+                          (sci/eval-string* (:sci-context context) source)))]
+                   {:status :ok
+                    :value {:value (value/describe value origin)
+                            :out (str out) :err (str err)}})
+                 (catch Throwable error {:status :error :error error}))
+               ;; A transcript failure supersedes whatever the form did,
+               ;; including a form that failed for its own reasons: an
+               ;; evaluation that did not account for its operations has not
+               ;; reconstructed anything, whatever status it reached.  A
+               ;; refusal already raised at an operation is kept as it is,
+               ;; because it says exactly where the divergence was and the
+               ;; count that follows would only say that there was one.
+               outcome (if (and (= :error (:status outcome))
+                                (transcript-failure (:error outcome)))
+                         outcome
+                         (try
+                           (verify-transcript-consumed! transcript)
+                           outcome
+                           (catch Throwable error
+                             {:status :error :error error})))]
+           (if (= :ok (:status outcome))
+             (do (emit! (:runtime context) (:coordinate context)
+                        (:instance-id context) :context/evaluated {:status :ok})
+                 (:value outcome))
+             (do (emit! (:runtime context) (:coordinate context)
+                        (:instance-id context) :context/evaluation-failed
+                        {:status :error
+                         :error/type (.getName (class (:error outcome)))})
+                 ;; Unwrapped deliberately.  A transcript refusal is addressed
+                 ;; to recovery, not to the bounded context, and burying it
+                 ;; under SCI's location data would make the caller dig for
+                 ;; the one thing it has to act on.
+                 (throw (or (transcript-failure (:error outcome))
+                            (:error outcome))))))
+         (finally
+           (reset! (:transcript context) nil)))))))
 
 (defn invoke [context operation-id args]
   (let [context (resolve-handle context-handles :context context)]
@@ -1197,7 +1477,7 @@
     (value/describe
      (invoke-authorized (:runtime context) (:effective context)
                         (:coordinate context) (:instance-id context)
-                        operation-id args))))
+                        @(:transcript context) operation-id args))))
 
 (defn event-snapshot [runtime]
   (let [runtime (resolve-handle runtime-handles :runtime runtime)

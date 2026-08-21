@@ -68,3 +68,67 @@
        (sha-256
         (canonical-pr-str
          [:bb4t.coordinate/v1 kind (canonical-tree value)]))))
+
+(def ^:private max-lenient-depth 64)
+(def ^:private max-lenient-nodes 10000)
+
+(defn lenient-tree
+  "canonical-tree widened to a total function, for identifying a value rather
+   than reproducing it.
+
+  canonical-tree rejects everything outside the inert domain, which is right
+  for a value that has to round-trip and wrong for an argument that only has
+  to be recognized again.  A caller may legitimately write (project/read 1.5),
+  and the operation that rejects it still has to be identifiable in a
+  transcript.  Anything outside the domain reduces to its type, so two such
+  arguments of the same type are indistinguishable -- sound here, because such
+  a call fails the operation's own validation and records the same failure
+  either way.
+
+  Metadata is ignored rather than rejected, and the walk is bounded in depth
+  and node count, so a deeply nested or unbounded argument yields a marker
+  instead of hanging."
+  [value]
+  (let [nodes (volatile! 0)]
+    (letfn [(walk [value depth]
+              (vswap! nodes inc)
+              (cond
+                (> @nodes max-lenient-nodes) [:bounded :nodes]
+                (> depth max-lenient-depth) [:bounded :depth]
+                (nil? value) [:nil]
+                (boolean? value) [:boolean value]
+                (string? value) [:string value]
+                (char? value) [:character (str value)]
+                (keyword? value) [:keyword (namespace value) (name value)]
+                (symbol? value) [:symbol (namespace value) (name value)]
+                (integer? value) [:integer (str (bigint value))]
+                (number? value) [:number (str value)]
+                (record? value) [:opaque (some-> value class .getName)]
+                (map? value) [:map (->> value
+                                        (map (fn [[k v]]
+                                               [(walk k (inc depth))
+                                                (walk v (inc depth))]))
+                                        (sort-by (comp canonical-pr-str first))
+                                        vec)]
+                (vector? value) [:vector (mapv #(walk % (inc depth)) value)]
+                (list? value) [:list (mapv #(walk % (inc depth)) value)]
+                (set? value) [:set (->> value
+                                        (map #(walk % (inc depth)))
+                                        (sort-by canonical-pr-str)
+                                        vec)]
+                :else [:opaque (some-> value class .getName)]))]
+      (walk value 0))))
+
+(defn lenient-coordinate
+  "A domain-separated SHA-256 coordinate over lenient-tree.
+
+  Its domain tag differs from coordinate's, so a lenient digest can never be
+  mistaken for a strict one over the same value."
+  [kind value]
+  (when-not (qualified-keyword? kind)
+    (throw (ex-info "Coordinate kind must be a qualified keyword"
+                    {:coordinate/kind kind})))
+  (str "sha256:"
+       (sha-256
+        (canonical-pr-str
+         [:bb4t.coordinate/lenient-v1 kind (lenient-tree value)]))))
