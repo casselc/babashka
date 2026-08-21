@@ -496,6 +496,193 @@
 
               :else nil)))))))
 
+(defn- sha256-digest [^bytes content]
+  (let [digest (java.security.MessageDigest/getInstance "SHA-256")
+        bytes (.digest digest content)]
+    (str "sha256:"
+         (str/join (map #(format "%02x" %) bytes)))))
+
+(defn- descend
+  "Walks components under root through SecureDirectoryStreams and calls f with
+   the innermost directory. Never follows a symbolic link, so no component can
+   redirect the walk out of the authorized root."
+  [^Path root components operation f]
+  (let [opened (atom [])]
+    (try
+      (let [root-directory (Files/newDirectoryStream root)]
+        (swap! opened conj root-directory)
+        (when-not (instance? SecureDirectoryStream root-directory)
+          (fail! "Filesystem cannot provide secure project traversal"
+                 {:filesystem/feature :secure-directory-stream}))
+        (loop [^SecureDirectoryStream directory root-directory
+               [component & more] components]
+          (if component
+            (let [^SecureDirectoryStream child
+                  (try
+                    (.newDirectoryStream
+                     directory component
+                     (into-array LinkOption [LinkOption/NOFOLLOW_LINKS]))
+                    (catch java.nio.file.NotDirectoryException _
+                      (fail! (str operation " path component is not a directory")
+                             {}))
+                    (catch java.nio.file.NoSuchFileException _
+                      (fail! (str operation " path does not exist") {}))
+                    (catch java.nio.file.FileSystemException _
+                      (fail! (str operation " will not follow a symbolic link")
+                             {})))]
+              (swap! opened conj child)
+              (recur child more))
+            (f directory))))
+      (finally
+        (close-directories! @opened)))))
+
+(defn- project-path
+  "Validates a relative path and returns [directory-components file-name]."
+  [runtime effective operation relative-path]
+  (when-not (and (string? relative-path)
+                 (not (str/blank? relative-path))
+                 (<= (count relative-path) 4096))
+    (fail! (str operation " expects one bounded non-empty relative path")
+           {:path relative-path}))
+  (let [resource-id (get-in effective [:context/resources :project :resource/id])
+        ^Path root (get (:resources runtime) resource-id)
+        supplied (Paths/get relative-path (make-array String 0))]
+    (when (.isAbsolute supplied)
+      (fail! (str operation " rejects absolute paths") {:path relative-path}))
+    (let [lexical-target (.normalize (.resolve root supplied))]
+      (when-not (.startsWith lexical-target root)
+        (fail! (str operation " path escapes the authorized root")
+               {:path relative-path}))
+      (when (= lexical-target root)
+        (fail! (str operation " target is the project root, not a file")
+               {:path relative-path}))
+      (let [relative (.relativize root lexical-target)
+            components (mapv #(.getName relative %)
+                             (range (.getNameCount relative)))]
+        [root (vec (butlast components)) (last components)
+         (str relative)]))))
+
+(defn- current-file-bytes
+  "The file's bytes, or nil when it does not exist."
+  [^SecureDirectoryStream directory ^Path name-path max-bytes]
+  (try
+    (with-open [^SeekableByteChannel channel
+                (.newByteChannel
+                 directory name-path
+                 #{StandardOpenOption/READ LinkOption/NOFOLLOW_LINKS}
+                 (make-array FileAttribute 0))]
+      (read-bounded-channel channel max-bytes))
+    (catch java.nio.file.NoSuchFileException _ nil)))
+
+(defn- project-stat [runtime effective [relative-path :as args]]
+  (when-not (= 1 (count args))
+    (fail! "project/stat expects one relative path" {:operation/id :project/stat}))
+  (let [[root components name-path relative]
+        (project-path runtime effective "project/stat" relative-path)
+        max-bytes (get-in effective [:context/limits :project/read-max-bytes])]
+    (descend
+     root components "project/stat"
+     (fn [^SecureDirectoryStream directory]
+       (let [^BasicFileAttributeView view
+             (.getFileAttributeView
+              directory name-path BasicFileAttributeView
+              (into-array LinkOption [LinkOption/NOFOLLOW_LINKS]))
+             ^BasicFileAttributes attributes
+             (try (.readAttributes view)
+                  (catch java.nio.file.NoSuchFileException _ nil))]
+         (if (nil? attributes)
+           {:path relative :kind :absent}
+           (let [kind (entry-kind attributes)]
+             (if (= :file kind)
+               {:path relative
+                :kind :file
+                :bytes (.size attributes)
+                :digest (sha256-digest
+                         (current-file-bytes directory name-path max-bytes))}
+               {:path relative :kind kind}))))))))
+
+(defn- project-edit [runtime effective [options :as args]]
+  (when-not (and (= 1 (count args)) (map? options))
+    (fail! "project/edit expects one options map"
+           {:operation/id :project/edit}))
+  (let [{:keys [path base content]} options
+        [root components name-path relative]
+        (project-path runtime effective "project/edit" path)
+        limits (:context/limits effective)
+        max-write (:project/write-max-bytes limits)
+        max-read (:project/read-max-bytes limits)]
+    (when-not (string? content)
+      (fail! "project/edit :content must be a string" {:path relative}))
+    (when-not (or (= :absent base)
+                  (and (map? base) (string? (:digest base))))
+      (fail! (str "project/edit :base must be :absent or {:digest \"sha256:...\"}; "
+                  "an edit without a base coordinate is a blind overwrite")
+             {:path relative}))
+    (let [encoded (.getBytes ^String content StandardCharsets/UTF_8)]
+      (when (> (alength encoded) max-write)
+        (fail! "project/edit content exceeds the write byte limit"
+               {:limit max-write :bytes (alength encoded)}))
+      (descend
+       root components "project/edit"
+       (fn [^SecureDirectoryStream directory]
+         (let [^BasicFileAttributeView view
+               (.getFileAttributeView
+                directory name-path BasicFileAttributeView
+                (into-array LinkOption [LinkOption/NOFOLLOW_LINKS]))
+               ^BasicFileAttributes attributes
+               (try (.readAttributes view)
+                    (catch java.nio.file.NoSuchFileException _ nil))]
+           (when (and attributes (not (.isRegularFile attributes)))
+             (fail! "project/edit target is not a regular file" {:path relative}))
+           ;; Version anchoring. The world can change under an agent between a
+           ;; read and a write -- a human editor, a formatter, a Git checkout --
+           ;; so an edit states what it believed and is refused when that is no
+           ;; longer true.
+           (let [observed (when attributes
+                            (sha256-digest
+                             (current-file-bytes directory name-path max-read)))]
+             (cond
+               (and (= :absent base) attributes)
+               (fail! "project/edit conflict: file exists but :base was :absent"
+                      {:path relative :conflict/observed observed
+                       :bbagent/conflict true})
+
+               (and (not= :absent base) (nil? attributes))
+               (fail! "project/edit conflict: file does not exist"
+                      {:path relative :conflict/expected (:digest base)
+                       :bbagent/conflict true})
+
+               (and (not= :absent base) (not= observed (:digest base)))
+               (fail! "project/edit conflict: file changed since it was read"
+                      {:path relative
+                       :conflict/expected (:digest base)
+                       :conflict/observed observed
+                       :bbagent/conflict true})
+
+               :else
+               ;; Written to a sibling temporary and renamed, so a reader never
+               ;; observes a partially written file and a failed write leaves
+               ;; the original intact.
+               (let [temp-name (Paths/get (str ".bbagent-edit-"
+                                               (UUID/randomUUID))
+                                          (make-array String 0))]
+                 (try
+                   (with-open [^SeekableByteChannel channel
+                               (.newByteChannel
+                                directory temp-name
+                                #{StandardOpenOption/WRITE
+                                  StandardOpenOption/CREATE_NEW}
+                                (make-array FileAttribute 0))]
+                     (.write channel (ByteBuffer/wrap encoded)))
+                   (.move directory temp-name directory name-path)
+                   {:path relative
+                    :bytes (alength encoded)
+                    :digest (sha256-digest encoded)}
+                   (catch Throwable failure
+                     (try (.deleteFile directory temp-name)
+                          (catch Throwable _))
+                     (throw failure))))))))))))
+
 (defn- project-search [runtime effective [pattern-string options :as args]]
   (when-not (and (<= 1 (count args) 2)
                  (string? pattern-string)
@@ -591,7 +778,9 @@
    :bb4t.data/json-write (fn [_runtime _effective args] (json-write args))
    :bb4t.project/read project-read
    :bb4t.project/list project-list
-   :bb4t.project/search project-search})
+   :bb4t.project/search project-search
+   :bb4t.project/stat project-stat
+   :bb4t.project/edit project-edit})
 
 (defn- timestamp []
   (str (Instant/now)))

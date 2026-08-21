@@ -80,6 +80,45 @@
               "files that are not valid UTF-8.")
     :arglists (list ['pattern] ['pattern 'options])}})
 
+(def ^:private project-stat
+  {:capability/id :project/stat
+   :effects #{:project/read}
+   :doc "Report a project file's kind, size, and content digest."
+   :implementation/id :bb4t.project/stat
+   :operation
+   {:operation/id :project/stat
+    :input/schema [:tuple :relative-path]
+    :output/schema :project/file-coordinate
+    :sci/namespace 'project
+    :sci/var 'stat
+    :doc (str "Report {:path :kind :bytes :digest} for a file under the "
+              "authorized project root, or {:path :kind :absent} when it does "
+              "not exist. The :digest is the coordinate project/edit requires "
+              "as its :base, so a write can state which version it believed.")
+    :arglists (list ['relative-path])}})
+
+(def ^:private project-edit
+  {:capability/id :project/edit
+   :effects #{:project/write}
+   :doc "Replace a project file's contents, anchored to a known version."
+   :implementation/id :bb4t.project/edit
+   :operation
+   {:operation/id :project/edit
+    :input/schema [:tuple :map]
+    :output/schema :project/file-coordinate
+    :sci/namespace 'project
+    :sci/var 'edit
+    :doc (str "Replace a file's contents under the authorized project root. "
+              "Takes {:path \"rel/path\" :base BASE :content \"...\"} where "
+              "BASE is {:digest \"sha256:...\"} from project/stat, or :absent "
+              "to create a file that must not already exist. Fails as a "
+              "conflict rather than overwriting when the file changed since "
+              "that digest. Returns the new {:path :bytes :digest}. Writes "
+              "through a temporary and renames, so a reader never sees a "
+              "partial file. Does not create directories or follow symbolic "
+              "links.")
+    :arglists (list ['options])}})
+
 (def capability-catalog
   {:catalog/version 1
    :catalog/type :bb4t/capability-catalog
@@ -88,7 +127,9 @@
     (:capability/id json-write) json-write
     (:capability/id project-read) project-read
     (:capability/id project-list) project-list
-    (:capability/id project-search) project-search}})
+    (:capability/id project-search) project-search
+    (:capability/id project-stat) project-stat
+    (:capability/id project-edit) project-edit}})
 
 (def profiles
   {:agent/minimal
@@ -115,12 +156,28 @@
    :agent/project-survey
    {:profile/id :agent/project-survey
     :profile/max-capabilities #{:data/json-read :data/json-write
-                                :project/read :project/list :project/search}
+                                :project/read :project/list :project/search
+                                :project/stat}
     :profile/resources {:project :project/root}
     :profile/limits {:project/read-max-bytes 1048576
                      :project/list-max-entries 4096
                      :project/search-max-results 200
-                     :project/search-max-files 20000}}})
+                     :project/search-max-files 20000}}
+
+   ;; Survey stays read-only and stays meaningful. Write authority is a
+   ;; deliberate step up rather than something a read-only profile acquires
+   ;; because the milestone moved on.
+   :agent/project-develop
+   {:profile/id :agent/project-develop
+    :profile/max-capabilities #{:data/json-read :data/json-write
+                                :project/read :project/list :project/search
+                                :project/stat :project/edit}
+    :profile/resources {:project :project/root}
+    :profile/limits {:project/read-max-bytes 1048576
+                     :project/list-max-entries 4096
+                     :project/search-max-results 200
+                     :project/search-max-files 20000
+                     :project/write-max-bytes 1048576}}})
 
 (def project-capabilities
   "Capabilities bound to the project resource.  Each contributes the limit
@@ -132,7 +189,11 @@
    ;; limit belongs to the effect, not to the operation that names it.
    :project/search {:limits #{:project/search-max-results
                               :project/search-max-files
-                              :project/read-max-bytes}}})
+                              :project/read-max-bytes}}
+   :project/stat {:limits #{:project/read-max-bytes}}
+   ;; Editing reads before it writes, because a conflict check is a read.
+   :project/edit {:limits #{:project/write-max-bytes
+                            :project/read-max-bytes}}})
 
 (def ^:private base-allow-core
   "The pure Clojure vocabulary a bounded context may use.
