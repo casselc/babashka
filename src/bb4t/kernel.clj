@@ -1,6 +1,7 @@
 (ns bb4t.kernel
   (:require [bb4t.canonical :as canonical]
              [bb4t.catalog :as catalog]
+             [bb4t.execution :as execution]
              [bb4t.value :as value]
              [cheshire.core :as json]
              [clojure.java.io :as io]
@@ -829,6 +830,148 @@
        root (.relativize root lexical-target)
        (get-in effective [:context/limits :project/list-max-entries])))))
 
+(def ^:private max-run-arguments 64)
+(def ^:private max-run-argument-characters 4096)
+(def ^:private max-run-cwd-characters 4096)
+
+(defn- run-argv
+  "The command, as a bounded vector of non-empty strings.
+
+   argv is a vector rather than a string because there is no shell here to
+   split one.  A caller that wants shell semantics asks for a shell by name
+   and passes it a script, which is a visible thing to have done rather than
+   a quoting rule nobody can see."
+  [argv]
+  (when-not (and (sequential? argv)
+                 (seq argv)
+                 (<= (count argv) max-run-arguments)
+                 (every? #(and (string? %)
+                               (not (str/blank? %))
+                               (<= (count %) max-run-argument-characters))
+                         argv))
+    (fail! (str "project/run :argv must be a vector of 1 to " max-run-arguments
+                " non-blank strings")
+           {:operation/id :project/run}))
+  (vec argv))
+
+(defn- run-cwd
+  "The working directory, relative to the project root and unable to leave it.
+
+   Checked lexically and not against the host filesystem: the directory the
+   command will actually see is the disposable workspace, not this project,
+   and a check against the wrong tree would be worse than no check.  A
+   directory that turns out not to exist there is reported as a command that
+   could not be started."
+  [cwd]
+  (let [cwd (if (nil? cwd) "." cwd)]
+    (when-not (and (string? cwd)
+                   (not (str/blank? cwd))
+                   (<= (count cwd) max-run-cwd-characters))
+      (fail! "project/run :cwd must be a bounded non-empty relative path"
+             {:operation/id :project/run}))
+    (let [supplied (Paths/get ^String cwd (make-array String 0))]
+      (when (.isAbsolute supplied)
+        (fail! "project/run rejects absolute paths" {:cwd cwd}))
+      (let [normalized (str (.normalize supplied))]
+        (when (or (= ".." normalized) (str/starts-with? normalized "../"))
+          (fail! "project/run :cwd escapes the authorized root" {:cwd cwd}))
+        (if (str/blank? normalized) "." normalized)))))
+
+(defn- run-timeout
+  "The deadline, defaulting to the Context maximum and never exceeding it."
+  [timeout-ms maximum]
+  (let [timeout-ms (if (nil? timeout-ms) maximum timeout-ms)]
+    (when-not (and (integer? timeout-ms) (pos? timeout-ms))
+      (fail! "project/run :timeout-ms must be a positive integer"
+             {:operation/id :project/run}))
+    (when (> timeout-ms maximum)
+      (fail! "project/run :timeout-ms exceeds the context maximum"
+             {:timeout-ms timeout-ms :limit/max maximum}))
+    timeout-ms))
+
+(def ^:private run-statuses #{:completed :timeout :worker-failure})
+
+(defn- bounded-stream!
+  "One returned stream, or a refusal.
+
+   The budget was in the request, so an environment that returned more than
+   it was given did not enforce it.  That is a failure of the thing that was
+   supposed to be bounding the workload, and it fails closed here rather
+   than being trimmed into looking as though it had worked."
+  [text budget stream]
+  (let [text (str text)]
+    (when (> (count (.getBytes text StandardCharsets/UTF_8)) budget)
+      (fail! "Execution environment returned an unbounded stream"
+             {:bb4t/error :execution-environment-invalid
+              :stream stream
+              :limit/max budget}))
+    text))
+
+(defn- execution-result
+  "The worker's account of a run, as the semantic result of an operation.
+
+   Two things change on the way through.  A run whose project moved while it
+   was running gets a status of its own, and its process outcome is demoted
+   to :process/status and :process/exit, so no reader can match
+   {:status :completed :exit 0} against a run that was never anchored to a
+   single project state.  And :exit survives only when the workload actually
+   exited: a deadline is not a program that chose a number."
+  [result executor-coordinate stdout-max stderr-max]
+  (when-not (contains? run-statuses (:status result))
+    (fail! "Execution environment returned an unknown status"
+           {:bb4t/error :execution-environment-invalid
+            :status (:status result)}))
+  (let [stable? (true? (:project/input-stable? result))
+        exited? (contains? result :exit)
+        base {:stdout (bounded-stream! (:stdout result) stdout-max :stdout)
+              :stdout/bytes (:stdout/bytes result)
+              :stdout/truncated? (true? (:stdout/truncated? result))
+              :stderr (bounded-stream! (:stderr result) stderr-max :stderr)
+              :stderr/bytes (:stderr/bytes result)
+              :stderr/truncated? (true? (:stderr/truncated? result))
+              :duration-ms (:duration-ms result)
+              :worker/disposition (:worker/disposition result)
+              :project/input-stable? stable?
+              :executor/coordinate executor-coordinate}
+        error (:worker/error result)]
+    (cond-> base
+      stable? (assoc :status (:status result))
+      (and stable? exited?) (assoc :exit (:exit result))
+      (and stable? (:project/input-coordinate result))
+      (assoc :project/input-coordinate (:project/input-coordinate result))
+      (not stable?) (assoc :status :project-changed
+                           :process/status (:status result))
+      (and (not stable?) exited?) (assoc :process/exit (:exit result))
+      error (assoc :worker/error (str error)))))
+
+(defn- project-run [runtime effective [options :as args]]
+  (when-not (= 1 (count args))
+    (fail! "project/run expects one option map" {:operation/id :project/run}))
+  (when-not (map? options)
+    (fail! "project/run expects one option map" {:operation/id :project/run}))
+  (exact-keys! :project-run-options options #{:argv :cwd :timeout-ms})
+  (let [limits (:context/limits effective)
+        stdout-max (:project/run-max-stdout-bytes limits)
+        stderr-max (:project/run-max-stderr-bytes limits)
+        project-id (get-in effective [:context/resources :project :resource/id])
+        executor-id (get-in effective [:context/resources :executor :resource/id])
+        executor-coordinate
+        (get-in effective [:context/resources :executor :execution/coordinate])
+        ^Path root (get (:resources runtime) project-id)
+        environment (get (:resources runtime) executor-id)
+        request {:project/root root
+                 :argv (run-argv (:argv options))
+                 :cwd (run-cwd (:cwd options))
+                 :timeout-ms (run-timeout (:timeout-ms options)
+                                          (:project/run-max-timeout-ms limits))
+                 :stdout-max-bytes stdout-max
+                 :stderr-max-bytes stderr-max}]
+    (when-not (execution/execution-environment? environment)
+      (fail! "Context has no authorized execution environment"
+             {:bb4t/error :execution-environment-unavailable}))
+    (execution-result (execution/-execute environment request)
+                      executor-coordinate stdout-max stderr-max)))
+
 (def ^:private implementations
   {:bb4t.data/json-read (fn [_runtime _effective args] (json-read args))
    :bb4t.data/json-write (fn [_runtime _effective args] (json-write args))
@@ -836,7 +979,8 @@
    :bb4t.project/list project-list
    :bb4t.project/search project-search
    :bb4t.project/stat project-stat
-   :bb4t.project/edit project-edit})
+   :bb4t.project/edit project-edit
+   :bb4t.project/run project-run})
 
 (defn- timestamp []
   (str (Instant/now)))
@@ -868,9 +1012,7 @@
         (catch Throwable _)))
     event))
 
-(defn- resolve-root [resource-id root]
-  (when-not (= :project/root resource-id)
-    (fail! "Unknown runtime resource" {:resource/id resource-id}))
+(defn- resolve-filesystem-root [resource-id root]
   (when-not (or (string? root) (instance? Path root))
     (fail! "Runtime resource root must be a path string or Path"
            {:resource/id resource-id}))
@@ -883,6 +1025,39 @@
              {:resource/id resource-id}))
     real-root))
 
+(defn- resolve-resource
+  "Binds one trusted host resource, or refuses.
+
+   Two kinds, not a registry.  A filesystem root is a path the runtime can
+   check for itself; an execution environment is a host object that can only
+   be checked against the protocol it claims to implement and the inert
+   description it produces."
+  [resource-id value]
+  (case resource-id
+    :project/root (resolve-filesystem-root resource-id value)
+    :execution/environment
+    (do
+      (when-not (execution/execution-environment? value)
+        (fail! "Runtime execution resource must be an ExecutionEnvironment"
+               {:resource/id resource-id}))
+      ;; Described here, at binding time, so a host implementation that
+      ;; cannot say what it is fails before any Context is built on it.
+      (execution/describe value)
+      value)
+    (fail! "Unknown runtime resource" {:resource/id resource-id})))
+
+(defn- resource-description [resource-id value]
+  (case resource-id
+    :project/root {:resource/id resource-id
+                   :resource/type :filesystem/root
+                   :resource/path (str value)}
+    :execution/environment
+    (let [{:keys [description coordinate]} (execution/describe value)]
+      {:resource/id resource-id
+       :resource/type :execution/environment
+       :execution/description description
+       :execution/coordinate coordinate})))
+
 (defn- create-runtime-state
   [opts]
   (exact-keys! :runtime-options opts #{:resources :event-limit})
@@ -893,13 +1068,10 @@
     (when-not (and (integer? event-limit) (pos? event-limit))
       (fail! "Event limit must be a positive integer" {:event-limit event-limit}))
     (validate-catalog catalog/capability-catalog (set (keys implementations)))
-    (let [resources (into {} (map (fn [[id root]] [id (resolve-root id root)]))
+    (let [resources (into {} (map (fn [[id value]] [id (resolve-resource id value)]))
                           resource-input)
            resource-descriptions
-           (into {} (map (fn [[id ^Path root]]
-                           [id {:resource/id id
-                                :resource/type :filesystem/root
-                                :resource/path (str root)}]))
+           (into {} (map (fn [[id value]] [id (resource-description id value)]))
                  resources)
            manifest {:manifest/version 1
                      :manifest/type :bb4t/runtime-manifest
@@ -986,21 +1158,36 @@
             requested-project (filterv #(contains? catalog/project-capabilities %)
                                        requested)
             project? (boolean (seq requested-project))
+            executing? (boolean (some catalog/execution-capabilities requested))
             required-limits (into #{}
                                   (mapcat #(get-in catalog/project-capabilities
                                                    [% :limits]))
                                   requested-project)
-            default-bindings (if project? (:profile/resources profile) {})
+            required-resources (cond-> #{}
+                                 project? (conj :project)
+                                 executing? (conj :executor))
+            default-bindings (select-keys (:profile/resources profile)
+                                          required-resources)
             resource-bindings (or (:resource-bindings input) default-bindings)
             default-limits (select-keys (:profile/limits profile) required-limits)
             limits (or (:limits input) default-limits)]
-        (when-not (= (if project? #{:project} #{})
-                     (set (keys resource-bindings)))
+        (when-not (= required-resources (set (keys resource-bindings)))
           (fail! "Context resource bindings do not match effective grants"
                  {:resource-bindings resource-bindings :requested requested}))
         (when-not (= required-limits (set (keys limits)))
           (fail! "Context limits do not match effective grants"
                  {:limits limits :requested requested}))
+        ;; Execution fails closed at Context creation rather than at the
+        ;; first call.  A session that believes it can run the project's
+        ;; tests and discovers otherwise ten turns in has already made
+        ;; decisions on that belief; one that cannot be created has not.
+        (when executing?
+          (when-not (= :execution/environment (:executor resource-bindings))
+            (fail! "Execution capability requires the trusted execution resource"
+                   {:resource-bindings resource-bindings}))
+          (when-not (contains? (:resources runtime) :execution/environment)
+            (fail! "Runtime has no authorized execution environment"
+                   {:bb4t/error :execution-environment-unavailable})))
         (when project?
           (when-not (= :project/root (:project resource-bindings))
             (fail! "Project capability requires the trusted project resource"

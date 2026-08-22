@@ -119,6 +119,35 @@
               "links.")
     :arglists (list ['options])}})
 
+(def ^:private project-run
+  {:capability/id :project/run
+   :effects #{:project/execute}
+   :doc "Run a project-owned command in a disposable isolated workspace."
+   :implementation/id :bb4t.project/run
+   :operation
+   {:operation/id :project/run
+    :input/schema [:tuple :map]
+    :output/schema :project/execution-result
+    :sci/namespace 'project
+    :sci/var 'run
+    :doc (str "Run a command in a disposable copy of the authorized project. "
+              "Takes {:argv [\"program\" \"arg\" ...] :cwd \"rel/dir\" "
+              ":timeout-ms N}, where :cwd defaults to \".\" and :timeout-ms "
+              "defaults to the context maximum. The command sees the project "
+              "as it is now, including uncommitted work, and may write "
+              "anywhere it likes: the workspace is thrown away afterwards and "
+              "the real project is never modified. There is no network and no "
+              "host environment. Returns {:status :completed :exit N :stdout "
+              ":stderr ...} with :exit present only when the command actually "
+              "exited, :status :timeout when it ran out of time, "
+              ":status :worker-failure when it could not be started, and "
+              ":status :project-changed when the project was edited while the "
+              "command was running -- that last result proves nothing about "
+              "the project, so re-run it if you need an anchored answer. A "
+              ":project/input-coordinate names the exact project state the "
+              "command ran against, and is present only when there is one.")
+    :arglists (list ['options])}})
+
 (def effects
   "Every effect a capability may declare, and what re-running it would do.
 
@@ -135,7 +164,15 @@
   {:project/read {:effect/kind :observation}
    :project/list {:effect/kind :observation}
    :project/search {:effect/kind :observation}
-   :project/write {:effect/kind :actuation}})
+   :project/write {:effect/kind :actuation}
+   ;; Running a project's own command is classified as an actuation, and
+   ;; not because it necessarily changes anything.  A recovery cannot know
+   ;; whether the command it is about to re-run is a test or a deployment,
+   ;; and the cost of guessing wrong is asymmetric: reproducing a receipt
+   ;; for something that turned out to be harmless costs nothing, while
+   ;; re-running something that turned out not to be is a second change to
+   ;; a world that already has one.
+   :project/execute {:effect/kind :actuation}})
 
 (def effect-kinds #{:observation :actuation})
 
@@ -154,7 +191,8 @@
     (:capability/id project-list) project-list
     (:capability/id project-search) project-search
     (:capability/id project-stat) project-stat
-    (:capability/id project-edit) project-edit}})
+    (:capability/id project-edit) project-edit
+    (:capability/id project-run) project-run}})
 
 (def profiles
   {:agent/minimal
@@ -204,7 +242,30 @@
                      :project/list-max-entries 4096
                      :project/search-max-results 200
                      :project/search-max-files 20000
-                     :project/write-max-bytes 1048576}}})
+                     :project/write-max-bytes 1048576}}
+
+   ;; A3b. The A2 writable surface plus the authority to run the project's
+   ;; own commands somewhere that is not this host. It is a separate profile
+   ;; rather than a widening because execution is the first capability whose
+   ;; correctness depends on something outside bb4t entirely: a Context that
+   ;; grants it and has no authorized execution environment is refused at
+   ;; creation, which is a property this profile has and the frozen ones
+   ;; cannot acquire by accident.
+   :agent/project-execute
+   {:profile/id :agent/project-execute
+    :profile/max-capabilities #{:data/json-read :data/json-write
+                                :project/read :project/list :project/search
+                                :project/stat :project/edit :project/run}
+    :profile/resources {:project :project/root
+                        :executor :execution/environment}
+    :profile/limits {:project/read-max-bytes 1048576
+                     :project/list-max-entries 4096
+                     :project/search-max-results 200
+                     :project/search-max-files 20000
+                     :project/write-max-bytes 1048576
+                     :project/run-max-timeout-ms 300000
+                     :project/run-max-stdout-bytes 1048576
+                     :project/run-max-stderr-bytes 1048576}}})
 
 (def project-capabilities
   "Capabilities bound to the project resource.  Each contributes the limit
@@ -220,7 +281,22 @@
    :project/stat {:limits #{:project/read-max-bytes}}
    ;; Editing reads before it writes, because a conflict check is a read.
    :project/edit {:limits #{:project/write-max-bytes
-                            :project/read-max-bytes}}})
+                            :project/read-max-bytes}}
+   ;; Running bounds time and output rather than bytes on disk, and needs the
+   ;; execution resource as well as the project one.  A capability naming a
+   ;; resource beyond the project is what execution-resources below reads.
+   :project/run {:limits #{:project/run-max-timeout-ms
+                           :project/run-max-stdout-bytes
+                           :project/run-max-stderr-bytes}}})
+
+(def execution-capabilities
+  "Capabilities that require an authorized execution environment.
+
+   Separate from project-capabilities because the resource is separate: a
+   Context can hold every project capability and no way to execute anything,
+   and a Context that grants execution and has no environment bound to it is
+   not a narrower Context but a broken one."
+  #{:project/run})
 
 (def ^:private base-allow-core
   "The pure Clojure vocabulary a bounded context may use.
