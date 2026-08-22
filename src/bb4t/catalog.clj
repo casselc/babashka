@@ -174,11 +174,11 @@
     :profile/resources {:project :project/root}
     :profile/limits {:project/read-max-bytes 1048576}}
 
-   ;; The A2 observing surface. Unlike :agent/project-read it is not frozen
-   ;; while A2 is open; evidence recorded against it must name the capability
-   ;; set it was measured with. It stays read-only: write authority is a
-   ;; deliberate step up rather than something a surveying profile acquires
-   ;; because the milestone moved on.
+   ;; Frozen. The A2 observing surface, accepted at bb4t-a2/bbagent-a2. It
+   ;; stays read-only: write authority is a deliberate step up rather than
+   ;; something a surveying profile acquires because the milestone moved on.
+   ;; A capability added after A2 gets a new profile, so evidence recorded
+   ;; against this one keeps describing the surface it was measured with.
    :agent/project-survey
    {:profile/id :agent/project-survey
     :profile/max-capabilities #{:data/json-read :data/json-write
@@ -190,8 +190,10 @@
                      :project/search-max-results 200
                      :project/search-max-files 20000}}
 
-   ;; The profile that can change the project, and what a bbagent session
-   ;; defaults to.
+   ;; Frozen. The A2 writable surface, accepted at bb4t-a2/bbagent-a2, and
+   ;; what a bbagent session defaults to. Execution authority is not added
+   ;; here when it arrives; it gets a profile of its own, so a session
+   ;; created against A2 can never widen underneath its own coordinate.
    :agent/project-develop
    {:profile/id :agent/project-develop
     :profile/max-capabilities #{:data/json-read :data/json-write
