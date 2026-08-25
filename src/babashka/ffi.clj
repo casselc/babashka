@@ -21,14 +21,13 @@
 
   Pointers are native addresses stored in Clojure longs. :bool represents a
   one-byte C boolean and returns true or false. Thus, a C predicate does not
-  return the truthy number 0. The API does not support struct-by-value
-  arguments.
+  return the truthy number 0. Structs use
+  `[:struct [[:field type] ...]]`; a struct in cfn's argument or return list
+  is passed by value through libffi.
 
-  Native images limit most fixed signatures to six arguments. A signature
-  that uses only pointer and integer types supports up to 10 arguments. A
-  fixed signature supports at most three mixed floating-point arguments. It
-  supports four arguments of the same floating-point type. A :float return
-  supports at most four arguments.
+  Native images use compiled trampolines for common fixed signatures and a
+  libffi fallback for other fixed signatures and struct values. Binding
+  metadata reports :trampoline, :ffm, or :libffi.
 
   In native images, variadic calls support up to five total arguments. They
   support at most three fixed arguments and two :double arguments. Callbacks
@@ -48,8 +47,9 @@
   (:refer-clojure :exclude [read])
   (:require [clojure.string :as str])
   (:import [java.lang.foreign Arena FunctionDescriptor Linker MemoryLayout
-            MemorySegment SymbolLookup ValueLayout]
-           [java.lang.invoke MethodHandle MethodHandles MethodType]))
+           MemorySegment SymbolLookup ValueLayout]
+           [java.lang.invoke MethodHandle MethodHandles MethodType]
+           [java.nio.charset StandardCharsets]))
 
 (set! *warn-on-reflection* true)
 
@@ -61,6 +61,9 @@
 (def ^:private long-carrier?
   #{:int :uint :long :ulong :int8 :uint8 :int16 :uint16 :int32 :uint32
     :int64 :uint64 :size_t :ssize_t :char :byte :pointer :string :bool})
+
+(defn- struct-type? [t]
+  (and (vector? t) (= :struct (first t))))
 
 (defn- carrier [t]
   (cond (long-carrier? t) :long
@@ -171,12 +174,28 @@
   (let [as-long (fn [a] (cond (nil? a) 0
                               (instance? MemorySegment a) (.address ^MemorySegment a)
                               :else (long a)))
+        as-unsigned-long (fn [a]
+                           (cond (nil? a) 0
+                                 (instance? MemorySegment a) (.address ^MemorySegment a)
+                                 (instance? Number a) (.longValue ^Number a)
+                                 :else (long a)))
         as-double (fn [a] (double a))
         as-float (fn [a] (float a))
         as-bool (fn [a] (if a 1 0))]
-    (into {:double as-double :float as-float :bool as-bool}
+    (into {:double as-double
+           :float as-float
+           :bool as-bool
+           :uint as-unsigned-long
+           :uint8 as-unsigned-long
+           :uint16 as-unsigned-long
+           :uint32 as-unsigned-long
+           :ulong as-unsigned-long
+           :uint64 as-unsigned-long
+           :size_t as-unsigned-long}
           (map (fn [t] [t as-long]))
-          (disj long-carrier? :bool))))
+          (apply disj long-carrier?
+                 [:bool :uint :uint8 :uint16 :uint32
+                  :ulong :uint64 :size_t]))))
 
 (defn- coerce-arg [t a] ((arg-coercer t) a))
 
@@ -345,10 +364,14 @@
       (throw (ex-info (str "babashka.ffi: symbol not found: " sym) {:symbol sym}))))
 
 (defn find-symbol
-  "Finds sym in the loaded libraries and the default system lookup. Returns
-  its native address as a Clojure long. Returns nil for an unknown symbol."
-  [sym]
-  (some-> (lookup-symbol nil (str sym)) .address))
+  "Finds sym and returns its native address as a Clojure long, or nil.
+
+  With one argument, searches loaded libraries and the default system lookup.
+  With a library map returned by load-library, searches only that library."
+  ([sym]
+   (some-> (lookup-symbol nil (str sym)) .address))
+  ([lib sym]
+   (some-> (lookup-symbol lib (str sym)) .address)))
 
 ;; -- foreign functions --------------------------------------------------------
 
@@ -385,6 +408,188 @@
   "variadic calls support up to 5 args total, at most 3 fixed, at most 2 :double, and a :void, integer or pointer return")
 
 (declare ^:private fixed-cfn)
+(declare alloc free sizeof read write)
+
+;; -- libffi fixed-signature fallback -----------------------------------------
+
+(defn- load-libffi []
+  (case (os-key)
+    :windows (load-library ["libffi-8.dll" "libffi.dll" "ffi.dll"])
+    (load-system-library "ffi")))
+
+(defn- default-libffi-abi []
+  ;; libffi's public ffi_abi enum is target-specific. These are its default
+  ;; 64-bit ABI values: AArch64 SYSV=1, x86-64 UNIX64=2, Windows x64=1.
+  (cond
+    (= :windows (os-key)) 1
+    (= "aarch64" (System/getProperty "os.arch")) 1
+    :else 2))
+
+(def ^:private primitive-ffi-type-symbol
+  {:void "ffi_type_void"
+   :bool "ffi_type_uint8"
+   :int8 "ffi_type_sint8"
+   :byte "ffi_type_sint8"
+   :char "ffi_type_sint8"
+   :uint8 "ffi_type_uint8"
+   :int16 "ffi_type_sint16"
+   :uint16 "ffi_type_uint16"
+   :int "ffi_type_sint32"
+   :int32 "ffi_type_sint32"
+   :uint "ffi_type_uint32"
+   :uint32 "ffi_type_uint32"
+   :long "ffi_type_sint64"
+   :int64 "ffi_type_sint64"
+   :ssize_t "ffi_type_sint64"
+   :ulong "ffi_type_uint64"
+   :uint64 "ffi_type_uint64"
+   :size_t "ffi_type_uint64"
+   :float "ffi_type_float"
+   :double "ffi_type_double"
+   :pointer "ffi_type_pointer"
+   :string "ffi_type_pointer"})
+
+(def ^:private libffi*
+  (delay
+    (let [library (load-libffi)]
+      {:library library
+       :prep-cif (fixed-cfn library "ffi_prep_cif"
+                            [:pointer :int :uint :pointer :pointer] :int)
+       :call (fixed-cfn library "ffi_call"
+                        [:pointer :pointer :pointer :pointer] :void)})))
+
+;; ffi_type values for structs own their NUL-terminated elements array. They
+;; are cached for process lifetime, matching the lifetime of cfn bindings.
+(def ^:private libffi-types* (atom {}))
+
+(declare ^:private libffi-type)
+
+(defn- struct-field-types [type]
+  (let [fields (second type)]
+    (when-not (and (= 2 (count type))
+                   (vector? fields)
+                   (every? #(and (vector? %) (= 2 (count %)) (keyword? (first %)))
+                           fields)
+                   (= (count fields) (count (distinct (map first fields)))))
+      (throw (ex-info (str "babashka.ffi: invalid struct type " (pr-str type))
+                      {:type type})))
+    (mapv second fields)))
+
+(defn- make-struct-ffi-type [type]
+  (let [element-types (mapv libffi-type (struct-field-types type))
+        pointer-size (sizeof :pointer)
+        elements (alloc (* pointer-size (inc (count element-types))))
+        ffi-type (alloc 24)]
+    (doseq [[index element] (map-indexed vector element-types)]
+      (write elements :pointer (* pointer-size index) element))
+    (write elements :pointer (* pointer-size (count element-types)) 0)
+    ;; ffi_type {size_t size; ushort alignment; ushort type; **elements}.
+    ;; libffi fills size/alignment while preparing the CIF.
+    (write ffi-type :size_t 0 0)
+    (write ffi-type :uint16 8 0)
+    (write ffi-type :uint16 10 13) ; FFI_TYPE_STRUCT
+    (write ffi-type :pointer 16 elements)
+    ffi-type))
+
+(defn- libffi-type [type]
+  (or (get @libffi-types* type)
+      (let [library (:library (force libffi*))
+            pointer
+            (if (struct-type? type)
+              (make-struct-ffi-type type)
+              (if-let [symbol (get primitive-ffi-type-symbol type)]
+                (.address (require-symbol library symbol))
+                (throw (ex-info (str "babashka.ffi: unknown type " type)
+                                {:type type}))))]
+        (swap! libffi-types* assoc type pointer)
+        pointer)))
+
+(defn- libffi-cif [argtypes rettype]
+  (let [{:keys [prep-cif]} (force libffi*)
+        pointer-size (sizeof :pointer)
+        arg-type-pointers (mapv libffi-type argtypes)
+        return-type-pointer (libffi-type rettype)
+        atypes (alloc (max pointer-size (* pointer-size (count argtypes))))
+        cif (alloc 256)]
+    (doseq [[index pointer] (map-indexed vector arg-type-pointers)]
+      (write atypes :pointer (* pointer-size index) pointer))
+    (let [status (prep-cif cif (default-libffi-abi) (count argtypes)
+                           return-type-pointer atypes)]
+      (when-not (zero? status)
+        (free cif)
+        (free atypes)
+        (throw (ex-info "babashka.ffi: ffi_prep_cif failed"
+                        {:status status
+                         :argtypes argtypes
+                         :rettype rettype}))))
+    {:cif cif
+     :atypes atypes
+     :return-type-pointer return-type-pointer}))
+
+(defn- libffi-write-argument! [pointer type value]
+  (case type
+    :string (write pointer :pointer 0 value)
+    :pointer (write pointer :pointer 0 value)
+    (write pointer type 0 value)))
+
+(defn- libffi-read-result [pointer type]
+  (cond
+    (= :void type) nil
+    (struct-type? type) pointer
+    (= :string type) (ptr->string (read pointer :pointer))
+    :else (read pointer type)))
+
+(defn- libffi-cfn [lib sym argtypes rettype]
+  ;; Force this at bind time so an unavailable libffi produces a focused
+  ;; signature error before any native call is attempted.
+  (let [{ffi-call :call} (force libffi*)
+        {:keys [cif return-type-pointer]} (libffi-cif argtypes rettype)
+        function-pointer (.address (require-symbol lib sym))
+        pointer-size (sizeof :pointer)
+        n (count argtypes)
+        return-size (if (= :void rettype)
+                      0
+                      (if (struct-type? rettype)
+                        ;; ffi_prep_cif populated ffi_type.size.
+                        (read return-type-pointer :size_t)
+                        (sizeof rettype)))
+        arity-error (fn [got]
+                      (throw (ex-info (str "babashka.ffi: " sym " expects " n
+                                           " args, got " got)
+                                      {:symbol sym})))]
+    (with-meta
+      (fn [& args]
+        (if-not (= n (count args))
+          (arity-error (count args))
+          (with-string-args argtypes (vec args)
+            (fn [args]
+              (let [argument-storage (atom [])
+                    avalues (alloc (max pointer-size (* pointer-size n)))
+                    rvalue (when (pos? return-size) (alloc return-size))
+                    keep-rvalue? (atom false)]
+                (try
+                  (doseq [[index [type value]]
+                          (map-indexed vector (map vector argtypes args))]
+                    (let [storage
+                          (if (struct-type? type)
+                            (long value)
+                            (let [pointer (alloc (sizeof type))]
+                              (swap! argument-storage conj pointer)
+                              (libffi-write-argument! pointer type value)
+                              pointer))]
+                      (write avalues :pointer (* pointer-size index) storage)))
+                  (ffi-call cif function-pointer (or rvalue 0) avalues)
+                  (let [result (libffi-read-result rvalue rettype)]
+                    ;; A struct return is caller-owned native memory. Every
+                    ;; scalar result is copied before its temporary is freed.
+                    (when (struct-type? rettype)
+                      (reset! keep-rvalue? true))
+                    result)
+                  (finally
+                    (doseq [pointer @argument-storage] (free pointer))
+                    (when (and rvalue (not @keep-rvalue?)) (free rvalue))
+                    (free avalues))))))))
+      {:babashka.ffi/backend :libffi})))
 
 (defn- variadic-cfn
   "A variadic binding: fixed types declared, tail inferred per call. One FFM
@@ -462,7 +667,7 @@
      (variadic-cfn lib sym fixed argtypes rettype)
      (fixed-cfn lib sym argtypes rettype))))
 
-(defn- fixed-cfn
+(defn- direct-fixed-cfn
   [lib sym argtypes rettype]
   (let [types argtypes
         perm (sort-permutation types)
@@ -541,6 +746,40 @@
        ;; (interpreted in a native image)
        {:babashka.ffi/backend (if tramp-id :trampoline :ffm)})))
 
+(defn- fixed-cfn [lib sym argtypes rettype]
+  (if (or (struct-type? rettype) (some struct-type? argtypes))
+    (libffi-cfn lib sym argtypes rettype)
+    (let [perm (sort-permutation argtypes)
+          ordered-types (if perm (mapv argtypes perm) argtypes)
+          fallback? (and native-image?
+                         (nil? (get trampoline-ids
+                                    (shape-key ordered-types rettype))))]
+      (if fallback?
+        (libffi-cfn lib sym argtypes rettype)
+        (direct-fixed-cfn lib sym argtypes rettype)))))
+
+(defn signature-backend
+  "Reports the call mechanism a cfn fixed signature selects without resolving
+  a C symbol. Returns :trampoline, :ffm, or :libffi."
+  [argtypes rettype]
+  (when (some #(= :void %) argtypes)
+    (throw (ex-info (str "babashka.ffi: :void is not an argument type: "
+                         (pr-str argtypes))
+                    {:argtypes argtypes})))
+  (if (or (struct-type? rettype) (some struct-type? argtypes))
+    (do
+      (doseq [type (cond-> argtypes
+                     (struct-type? rettype) (conj rettype))]
+        (when (struct-type? type) (struct-field-types type)))
+      :libffi)
+    (let [perm (sort-permutation argtypes)
+          ordered-types (if perm (mapv argtypes perm) argtypes)
+          key (shape-key ordered-types rettype)]
+      ;; shape-key also validates every scalar type.
+      (if native-image?
+        (if (get trampoline-ids key) :trampoline :libffi)
+        :ffm))))
+
 (defmacro defcfn
   "Defines name as a C function binding created by cfn:
 
@@ -601,10 +840,64 @@
    :pointer 8 :string 8 :double 8
    :int16 2 :uint16 2 :int8 1 :uint8 1 :byte 1 :char 1 :bool 1})
 
+(defn- align-up [offset alignment]
+  (let [remainder (mod offset alignment)]
+    (if (zero? remainder) offset (+ offset (- alignment remainder)))))
+
+(declare ^:private type-layout)
+
+(defn- struct-layout [type]
+  (let [fields (second type)
+        _ (struct-field-types type)
+        built
+        (reduce
+         (fn [{:keys [offset alignment field-info]} [field-name field-type]]
+           (let [child (type-layout field-type)
+                 field-offset (align-up offset (:alignment child))
+                 child-fields
+                 (if (:fields child)
+                   (into {}
+                         (map (fn [[path info]]
+                                [(into [field-name] path)
+                                 (update info :offset + field-offset)]))
+                         (:fields child))
+                   {[field-name] {:offset field-offset :type field-type}})]
+             {:offset (+ field-offset (:size child))
+              :alignment (max alignment (:alignment child))
+              :field-info (merge field-info child-fields)}))
+         {:offset 0 :alignment 1 :field-info {}}
+         fields)
+        size (align-up (:offset built) (:alignment built))]
+    {:type type
+     :size size
+     :alignment (:alignment built)
+     :fields (:field-info built)}))
+
+(defn- type-layout [type]
+  (if (struct-type? type)
+    (struct-layout type)
+    (if-let [size (get sizes type)]
+      {:type type :size size :alignment size}
+      (throw (ex-info (str "babashka.ffi: unknown type " type) {:type type})))))
+
+(defn layout
+  "Computes C size, alignment and nested field offsets for a struct type."
+  [type]
+  (when-not (struct-type? type)
+    (throw (ex-info (str "babashka.ffi: layout requires a struct type, got "
+                         (pr-str type))
+                    {:type type})))
+  (type-layout type))
+
+(defn layout-size
+  "Returns the byte size of a layout returned by layout."
+  [layout]
+  (:size layout))
+
 (defn sizeof
-  "Returns the size, in bytes, of type keyword t."
+  "Returns the size, in bytes, of a scalar keyword or struct type."
   [t]
-  (or (sizes t) (throw (ex-info (str "babashka.ffi: unknown type " t) {:type t}))))
+  (:size (type-layout t)))
 
 (defn read
   "Reads a value of type t from pointer p. The optional byte offset defaults
@@ -637,8 +930,10 @@
          off (long offset)]
      (case t
        (:int :uint :int32 :uint32) (.set seg ValueLayout/JAVA_INT_UNALIGNED off (unchecked-int (long v)))
-       (:long :ulong :int64 :uint64 :size_t :ssize_t :pointer)
+       (:long :int64 :ssize_t :pointer)
        (.set seg ValueLayout/JAVA_LONG_UNALIGNED off (long v))
+       (:ulong :uint64 :size_t)
+       (.set seg ValueLayout/JAVA_LONG_UNALIGNED off (.longValue ^Number v))
        (:int16 :uint16) (.set seg ValueLayout/JAVA_SHORT_UNALIGNED off (unchecked-short (long v)))
        :bool (.set seg ValueLayout/JAVA_BYTE off (unchecked-byte (if v 1 0)))
        (:int8 :uint8 :byte :char) (.set seg ValueLayout/JAVA_BYTE off (unchecked-byte (long v)))
@@ -646,6 +941,50 @@
        :float (.set seg ValueLayout/JAVA_FLOAT_UNALIGNED off (float v))
        (throw (ex-info (str "babashka.ffi: cannot write type " t) {:type t})))
      nil)))
+
+(defn read-field
+  "Reads a scalar field by its keyword path from pointer p and layout l."
+  [p l path]
+  (if-let [{:keys [offset type]} (get (:fields l) path)]
+    (read p type offset)
+    (throw (ex-info "babashka.ffi: unknown struct field path"
+                    {:path path :layout (:type l)}))))
+
+(defn write-field
+  "Writes a scalar field by its keyword path to pointer p and layout l."
+  [p l path value]
+  (if-let [{:keys [offset type]} (get (:fields l) path)]
+    (write p type offset value)
+    (throw (ex-info "babashka.ffi: unknown struct field path"
+                    {:path path :layout (:type l)}))))
+
+(defn read-array
+  "Copies n bytes from native pointer p into a byte array."
+  [p n]
+  (if (zero? n)
+    (byte-array 0)
+    (.toArray (segment p n) ValueLayout/JAVA_BYTE)))
+
+(defn write-array
+  "Copies a byte array to native pointer p. Returns nil."
+  [p value]
+  (let [n (alength ^bytes value)]
+    (when (pos? n)
+      (MemorySegment/copy ^bytes value 0 (segment p n)
+                          ValueLayout/JAVA_BYTE 0 n)))
+  nil)
+
+(defn read-bytes
+  "Reads n UTF-8 bytes from native pointer p. Embedded NUL bytes are kept."
+  [p n]
+  (String. ^bytes (read-array p n) StandardCharsets/UTF_8))
+
+(defn write-bytes
+  "Writes UTF-8 bytes for s to native pointer p and returns the byte count."
+  [p s]
+  (let [value (.getBytes ^String s StandardCharsets/UTF_8)]
+    (write-array p value)
+    (alength value)))
 
 (defn string->ptr
   "Copies s to newly allocated native memory as a NUL-terminated UTF-8

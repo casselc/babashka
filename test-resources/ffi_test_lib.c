@@ -50,6 +50,49 @@ EXPORT uint8_t ret_uint8_max(void) { return 255; }
 EXPORT int16_t ret_int16_neg(void) { return -2; }
 EXPORT uint16_t ret_uint16_max(void) { return 65535; }
 EXPORT float ret_float(void) { return 1.5f; }
+EXPORT uint64_t echo_u64(uint64_t value) { return value; }
+
+/* -- libffi fallback: wide signatures and structs by value -- */
+
+typedef struct {
+    int32_t year;
+    uint8_t month;
+    uint8_t day;
+} bb_date;
+
+typedef struct {
+    uint8_t hour;
+    uint8_t minute;
+    uint8_t second;
+    uint32_t microsecond;
+} bb_time;
+
+typedef struct {
+    bb_date date;
+    bb_time time;
+} bb_datetime;
+
+EXPORT int64_t date_score(bb_date value) {
+    return value.year * 10000 + value.month * 100 + value.day;
+}
+
+EXPORT int64_t datetime_score(bb_datetime value) {
+    return date_score(value.date) * 1000000 +
+           value.time.hour * 10000 + value.time.minute * 100 + value.time.second;
+}
+
+EXPORT bb_date make_date(int32_t year, uint8_t month, uint8_t day) {
+    bb_date value = {year, month, day};
+    return value;
+}
+
+EXPORT double wide_mixed(int64_t a, double b, int64_t c, double d,
+                         int64_t e, double f, int64_t g, float h,
+                         int64_t i, int64_t j, int64_t k, int64_t l) {
+    return a + b * 10 + c * 100 + d * 1000 + e * 10000 + f * 100000 +
+           g * 1000000 + h * 10000000 + i * 100000000 + j * 1000000000 +
+           k * 10000000000.0 + l * 100000000000.0;
+}
 
 /* -- varargs: sum the n variadic int64 args by 10^position -- */
 

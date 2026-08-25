@@ -122,6 +122,12 @@ Use `find-symbol` to get a pointer to a symbol without a function binding:
 ;;=> 4438706736
 ```
 
+Pass a library map first to restrict lookup to that library:
+
+```clojure
+(ffi/find-symbol zlib "zlibVersion")
+```
+
 The result is a native address in a Clojure long. You can pass this value to
 a C function that accepts a function or data pointer.
 
@@ -179,6 +185,7 @@ Use these type keywords in function signatures:
 | `:bool` | One-byte C boolean. |
 | `:pointer` | Native address in a Clojure long. |
 | `:string` | Pointer to a NUL-terminated UTF-8 string. |
+| `[:struct [[:field type] ...]]` | C struct value with named, possibly nested fields. |
 
 `:long` and `:ulong` are always 64-bit types. A C `long` is 32 bits on
 Windows. Use the type that matches the C declaration.
@@ -202,6 +209,36 @@ pointer after C no longer uses it.
 
 A `:string` return value reads the pointer as UTF-8. A NULL return value
 becomes `nil`.
+
+### Struct values
+
+Use a data descriptor for a C struct. Field order is declaration order:
+
+```clojure
+(def date-type
+  [:struct [[:year :int32]
+            [:month :uint8]
+            [:day :uint8]]])
+
+(def date-layout (ffi/layout date-type))
+;;=> {:size 8, :alignment 4, ...}
+```
+
+`layout` calculates C alignment and padding. `read-field` and `write-field`
+accept nested keyword paths. A struct argument to `cfn` is passed by value;
+the Clojure call supplies a pointer to a caller-owned buffer with that layout.
+
+```clojure
+(def date-score (ffi/cfn library "date_score" [date-type] :int64))
+(let [date (ffi/alloc (ffi/layout-size date-layout))]
+  (try
+    (ffi/write-field date date-layout [:year] 2024)
+    (date-score date)
+    (finally (ffi/free date))))
+```
+
+A struct return value is a newly allocated native buffer. The caller owns it
+and must release it with `free`.
 
 ## Call a variadic function
 
@@ -275,6 +312,10 @@ Use `sizeof` to get the size of a type:
 (ffi/sizeof :pointer)
 ;;=> 8
 ```
+
+Use `read-array` and `write-array` for bulk byte copies. `read-bytes` and
+`write-bytes` decode and encode a specified number of UTF-8 bytes, including
+embedded NUL bytes.
 
 Use `string->ptr` to allocate a C string. Release the result with `free`:
 
@@ -350,18 +391,32 @@ becomes `true` or `false`.
 CAUTION: Do not let a callback throw an exception. Catch exceptions inside
 the callback, or the process can stop.
 
-## Signature limits
+## Signature routing and limits
 
-Babashka includes a fixed set of native call signatures. If a signature is
-unsupported, `cfn` or `callback` throws an exception.
+Babashka native images include compiled trampolines for common fixed call
+signatures. They remain the fast path. A fixed signature outside that family,
+or any fixed signature containing a struct, automatically uses libffi. On the
+JVM, scalar fixed signatures use FFM and struct signatures use libffi.
 
-Fixed functions have these limits:
+Inspect a binding's metadata to see the selected path:
 
-- A function can have up to 6 arguments.
-- Up to 3 arguments can use `:float` or `:double` in any combination.
-- If all floating-point arguments use the same type, a function can have 4 of them.
-- A function with only integer or pointer arguments can have up to 10 arguments.
-- A function that returns `:float` can have up to 4 arguments.
+```clojure
+(:babashka.ffi/backend (meta binding))
+;;=> :trampoline, :ffm, or :libffi
+```
+
+Use `signature-backend` to inspect a fixed signature without resolving a C
+symbol:
+
+```clojure
+(ffi/signature-backend [:pointer :int64 :double] :int)
+```
+
+libffi is normally present on macOS and Linux. Minimal Linux images may need a
+runtime `libffi` package. Windows needs `libffi-8.dll`, `libffi.dll`, or
+`ffi.dll` on the normal DLL search path. A binding that needs the fallback
+fails at bind time with a focused error when libffi is unavailable; trampoline
+bindings do not require it.
 
 Variadic functions have these limits:
 
@@ -379,10 +434,8 @@ Callbacks have these limits:
 
 Argument order does not change these limits.
 
-Struct values are not supported as direct arguments or return values, yet.
-
-If a signature is not supported, use libffi or write a small C wrapper.
-See [`examples/ffi/libffi.clj`](../examples/ffi/libffi.clj) for a libffi example.
+The fixed-signature fallback does not change the limits for variadic calls or
+callbacks.
 
 ## Examples
 

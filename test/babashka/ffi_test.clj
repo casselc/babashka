@@ -213,78 +213,74 @@
                               (and (string? (:path z#))
                                    (string? ((ffi/cfn z# "zlibVersion" [] :string)))))))))))
     (when-not tu/windows?
-    (testing "candidate vectors in the OS map, first that loads wins"
-      (is (string? (bb `(do (require '[babashka.ffi :as ~'ffi])
-                            (ffi/load-library
-                             {:mac ["nonexistent-bb-zzz.dylib" "libz.dylib"]
-                              :linux ["nonexistent-bb-zzz.so" "libz.so.1" "libz.so"]})
-                            ((ffi/cfn "zlibVersion" [] :string))))))))
+      (testing "candidate vectors in the OS map, first that loads wins"
+        (is (string? (bb `(do (require '[babashka.ffi :as ~'ffi])
+                              (ffi/load-library
+                               {:mac ["nonexistent-bb-zzz.dylib" "libz.dylib"]
+                                :linux ["nonexistent-bb-zzz.so" "libz.so.1" "libz.so"]})
+                              ((ffi/cfn "zlibVersion" [] :string))))))))
     (when-not tu/windows?
       (testing "a top-level candidate vector works like an OS map value"
         (is (string? (bb `(do (require '[babashka.ffi :as ~'ffi])
                               (ffi/load-library
                                ["nonexistent-bb-zzz.so" "libz.dylib" "libz.so.1"])
                               ((ffi/cfn "zlibVersion" [] :string))))))))
-  (when (and tu/native?
-             (= "Linux" (System/getProperty "os.name")))
-    (when-let [lib @test-lib]
-      (testing "the soname glob searches LD_LIBRARY_PATH directories"
-        (let [dir (io/file "target" "ffi-env-lib")
-              f (io/file dir "libbbtest.so.1")]
-          (io/make-parents f)
-          (io/copy (io/file lib) f)
-          (let [res @(p/process
-                      ["./bb" "-e"
-                       (pr-str '(do (require '[babashka.ffi :as ffi])
-                                    (print (str (:path (ffi/load-system-library "bbtest"))))))]
-                      {:out :string :err :string
-                       :extra-env {"LD_LIBRARY_PATH" (.getAbsolutePath dir)}})]
-            (is (zero? (:exit res)) (:err res))
-            (is (re-find #"libbbtest\.so\.1$" (:out res))))))))
-  (testing "find-symbol probes without binding"
-    (is (= [true nil]
-           (bb `(do (require '[babashka.ffi :as ~'ffi])
-                    [(number? (ffi/find-symbol "strlen"))
-                     (ffi/find-symbol "bb_no_such_symbol_zzz")])))))
-  (testing "missing library throws"
+    (when (and tu/native?
+               (= "Linux" (System/getProperty "os.name")))
+      (when-let [lib @test-lib]
+        (testing "the soname glob searches LD_LIBRARY_PATH directories"
+          (let [dir (io/file "target" "ffi-env-lib")
+                f (io/file dir "libbbtest.so.1")]
+            (io/make-parents f)
+            (io/copy (io/file lib) f)
+            (let [res @(p/process
+                        ["./bb" "-e"
+                         (pr-str '(do (require '[babashka.ffi :as ffi])
+                                      (print (str (:path (ffi/load-system-library "bbtest"))))))]
+                        {:out :string :err :string
+                         :extra-env {"LD_LIBRARY_PATH" (.getAbsolutePath dir)}})]
+              (is (zero? (:exit res)) (:err res))
+              (is (re-find #"libbbtest\.so\.1$" (:out res))))))))
+    (testing "find-symbol probes without binding"
+      (is (= [true nil]
+             (bb `(do (require '[babashka.ffi :as ~'ffi])
+                      [(number? (ffi/find-symbol "strlen"))
+                       (ffi/find-symbol "bb_no_such_symbol_zzz")])))))
+    (testing "missing library throws"
       (is (thrown? Exception (bb `(do ~ffi-require
                                       (ffi/load-library "libdoesnotexist-bb.so"))))))
     (testing "missing symbol throws"
       (is (thrown? Exception (bb `(do ~ffi-require
                                       ((ffi/cfn "bb_no_such_symbol" [] :void)))))))))
 
-(deftest documented-limits-test
-  ;; the limits in doc/ffi.md are a contract: check both sides of each rule
+(deftest fixed-signature-routing-test
+  ;; The former fixed-shape limits now define the trampoline family boundary.
+  ;; Calls outside it remain expressible through the general libffi fallback.
   (when (and (not skip?) tu/native?)
     (let [bind (fn [args ret]
                  (bb `(do (require '[babashka.ffi :as ~'ffi])
-                          (try (ffi/cfn "abs" ~args ~ret) :ok
-                               (catch Exception _# :refused)))))]
-      (testing "signatures the docs say fit"
-        (is (= [:ok :ok :ok :ok :ok :ok]
+                          (:babashka.ffi/backend
+                           (meta (ffi/cfn "abs" ~args ~ret))))))]
+      (testing "in-family signatures use compiled trampolines"
+        (is (= [:trampoline :trampoline :trampoline
+                :trampoline :trampoline :trampoline]
                [(bind [:pointer :pointer :int :int :double :float] :void)
                 (bind [:pointer :double :float :double] :void)
                 (bind [:float :float :float :float] :void)
                 (bind [:double :double :double :double] :void)
                 (bind (vec (repeat 10 :long)) :long)
                 (bind [:int :int :int :int] :float)])))
-      (testing "signatures the docs say do not fit"
-        (is (= [:refused :refused :refused :refused]
+      (testing "out-of-family fixed signatures use libffi"
+        (is (= [:libffi :libffi :libffi :libffi]
                [(bind [:pointer :pointer :int :int :int :double :float] :void)
                 (bind [:double :double :double :float] :void)
                 (bind (vec (repeat 11 :long)) :long)
                 (bind [:int :int :int :int :int] :float)]))))))
 
 (deftest unsupported-signature-test
-  ;; native image only: the JVM path has no signature limits
+  ;; Variadic calls and callbacks still use the registered FFM families.
   (when (and (not skip?) tu/native?)
-    (testing "out-of-family signatures fail at bind time with the limits"
-      (is (thrown-with-msg?
-           Exception #"unsupported signature"
-           (bb `(do (require '[babashka.ffi :as ~'ffi])
-                    (ffi/cfn "printf"
-                             [:double :double :double :double :float :long :long :long]
-                             :double)))))
+    (testing "out-of-family variadic signatures retain focused limits"
       (is (thrown-with-msg?
            Exception #"unsupported signature"
            (bb `(do (require '[babashka.ffi :as ~'ffi])
@@ -350,6 +346,102 @@
                        ((ffi/cfn "ret_int16_neg" [] :int16))
                        ((ffi/cfn "ret_uint16_max" [] :uint16))
                        ((ffi/cfn "ret_float" [] :float))])))))))
+
+(deftest unsigned-width-test
+  (when-let [lib @test-lib]
+    (testing "unsigned arguments accept their full-width positive values"
+      (is (= [-1 -1]
+             (bb `(do ~(lib-require lib)
+                      (let [maximum# 18446744073709551615N
+                            echo# (ffi/cfn "echo_u64" [:uint64] :uint64)
+                            memory# (ffi/alloc 8)]
+                        (ffi/write memory# :uint64 maximum#)
+                        (let [result# [(echo# maximum#)
+                                       (ffi/read memory# :uint64)]]
+                          (ffi/free memory#)
+                          result#)))))))))
+
+(deftest libffi-fallback-test
+  (when-let [lib @test-lib]
+    (let [date-type [:struct [[:year :int32]
+                              [:month :uint8]
+                              [:day :uint8]]]
+          time-type [:struct [[:hour :uint8]
+                              [:minute :uint8]
+                              [:second :uint8]
+                              [:microsecond :uint32]]]
+          datetime-type [:struct [[:date date-type]
+                                  [:time time-type]]]]
+      (testing "struct layouts include C alignment, padding and nested offsets"
+        (is (= [8 8 16 8 12]
+               (bb `(do ~(lib-require lib)
+                        (let [date# (ffi/layout ~date-type)
+                              time# (ffi/layout ~time-type)
+                              datetime# (ffi/layout ~datetime-type)]
+                          [(ffi/layout-size date#)
+                           (ffi/layout-size time#)
+                           (ffi/layout-size datetime#)
+                           (get-in datetime# [:fields [:time :hour] :offset])
+                           (get-in datetime# [:fields [:time :microsecond] :offset])]))))))
+      (testing "struct-by-value arguments, nested structs and returns use libffi"
+        (is (= [20240229 20240229010203 [1999 12 31]
+                [:libffi :libffi :libffi]]
+               (bb `(do ~(lib-require lib)
+                        (let [date-layout# (ffi/layout ~date-type)
+                              datetime-layout# (ffi/layout ~datetime-type)
+                              date# (ffi/alloc (ffi/layout-size date-layout#))
+                              datetime# (ffi/alloc (ffi/layout-size datetime-layout#))
+                              date-score# (ffi/cfn "date_score" [~date-type] :int64)
+                              datetime-score# (ffi/cfn "datetime_score"
+                                                       [~datetime-type] :int64)
+                              make-date# (ffi/cfn "make_date"
+                                                  [:int32 :uint8 :uint8]
+                                                  ~date-type)]
+                          (doseq [[path# value#]
+                                  [[[:year] 2024] [[:month] 2] [[:day] 29]]]
+                            (ffi/write-field date# date-layout# path# value#))
+                          (doseq [[path# value#]
+                                  [[[:date :year] 2024] [[:date :month] 2]
+                                   [[:date :day] 29] [[:time :hour] 1]
+                                   [[:time :minute] 2] [[:time :second] 3]
+                                   [[:time :microsecond] 456789]]]
+                            (ffi/write-field datetime# datetime-layout# path# value#))
+                          (let [returned# (make-date# 1999 12 31)
+                                result# [(date-score# date#)
+                                         (datetime-score# datetime#)
+                                         [(ffi/read-field returned# date-layout# [:year])
+                                          (ffi/read-field returned# date-layout# [:month])
+                                          (ffi/read-field returned# date-layout# [:day])]
+                                         (mapv (comp :babashka.ffi/backend meta)
+                                               [date-score# datetime-score# make-date#])]]
+                            (ffi/free returned#)
+                            (ffi/free datetime#)
+                            (ffi/free date#)
+                            result#)))))))
+      (testing "unusual fixed scalar signatures retain the direct JVM path and fall back in native images"
+        (is (= [111111111111.0 (if tu/native? :libffi :ffm)]
+               (bb `(do ~(lib-require lib)
+                        (let [wide# (ffi/cfn "wide_mixed"
+                                             [:int64 :double :int64 :double
+                                              :int64 :double :int64 :float
+                                              :int64 :int64 :int64 :int64]
+                                             :double)]
+                          [(wide# 1 1 1 1 1 1 1 1 1 1 1 1)
+                           (:babashka.ffi/backend (meta wide#))])))))))))
+
+(deftest bulk-memory-test
+  (when-not skip?
+    (is (= [[0 1 -1 42] "a\u0000b" 3]
+           (bb `(do ~ffi-require
+                    (let [p# (ffi/alloc 4)
+                          bytes# (byte-array [0 1 -1 42])]
+                      (ffi/write-array p# bytes#)
+                      (let [result# [(vec (ffi/read-array p# 4))
+                                     (do (ffi/write-bytes p# (str "a" (char 0) "b"))
+                                         (ffi/read-bytes p# 3))
+                                     (ffi/write-bytes p# "abc")]]
+                        (ffi/free p#)
+                        result#))))))))
 
 (deftest varargs-lib-test
   (when-let [lib @test-lib]
@@ -429,7 +521,17 @@
                              ;; variadic stays on FFM by design
                              (ffi/cfn ~snprintf-sym
                                       [:pointer :size_t :string :&]
-                                      :int)]))))))))
+                                      :int)]))))))
+    (testing "signature diagnostics do not resolve a symbol"
+      (is (= (if tu/native?
+               [:trampoline :libffi :libffi]
+               [:ffm :ffm :libffi])
+             (bb `(do ~ffi-require
+                      [(ffi/signature-backend [:int] :int)
+                       (ffi/signature-backend ~(vec (repeat 12 :int64)) :int64)
+                       (ffi/signature-backend
+                        [[:struct [[:year :int32] [:month :uint8] [:day :uint8]]]]
+                        :int64)])))))))
 
 (deftest perf-canary-test
   ;; not a benchmark: a coarse ceiling that only the trampoline-to-FFM cliff
